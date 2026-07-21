@@ -87,7 +87,10 @@ class SpikeService : Service() {
         const val EXTRA_DELAY = "delay"
 
         private const val CHANNEL_ID = "spike"
-        private const val NOTIFICATION_ID = 1
+
+        // Must not collide with TimelapseNotification.ID: both services can be foreground
+        // at once, and a shared id means one silently replaces the other's notification.
+        private const val NOTIFICATION_ID = 900
 
         @Volatile
         var instance: SpikeService? = null

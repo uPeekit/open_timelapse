@@ -12,6 +12,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import org.peekit.opentimelapse.service.TimelapseService
 
 /**
  * Phase 0 console. Deliberately plain views - the spike must not depend on the UI stack
@@ -39,6 +40,16 @@ class SpikeActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 24, 24, 24)
         }
+
+        root.addView(button("START timelapse") {
+            TimelapseService.send(this, TimelapseService.ACTION_START)
+        })
+        root.addView(button("STOP timelapse") {
+            TimelapseService.send(this, TimelapseService.ACTION_STOP)
+        })
+        root.addView(button("Run one cycle (real engine)") {
+            TimelapseService.send(this, TimelapseService.ACTION_SINGLE_CYCLE)
+        })
 
         root.addView(button("System info") { trigger("sysinfo") })
         root.addView(button("Probe 1a - background launch from service (20s)") { trigger("bal-service", 20_000) })

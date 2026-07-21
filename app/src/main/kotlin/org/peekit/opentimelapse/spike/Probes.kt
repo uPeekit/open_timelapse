@@ -12,6 +12,7 @@ import android.provider.Settings
 import org.peekit.opentimelapse.WakeActivity
 import org.peekit.opentimelapse.accessibility.AccessibilityBridge
 import org.peekit.opentimelapse.core.ui.ShutterFinder
+import org.peekit.opentimelapse.service.TimelapseService
 import java.io.File
 import kotlinx.coroutines.delay
 
@@ -28,6 +29,10 @@ object Probes {
         SpikeLog.log("--- probe '$which' starting ---")
         when (which) {
             "sysinfo" -> sysinfo(context)
+            // Drives the real engine over adb; the service itself stays unexported.
+            "start" -> TimelapseService.send(context, TimelapseService.ACTION_START)
+            "stop" -> TimelapseService.send(context, TimelapseService.ACTION_STOP)
+            "cycle" -> TimelapseService.send(context, TimelapseService.ACTION_SINGLE_CYCLE)
             "swipe" -> swipeSweep(context, params)
             "bal-service" -> backgroundLaunch(context, fromAccessibility = false)
             "bal-accessibility" -> backgroundLaunch(context, fromAccessibility = true)

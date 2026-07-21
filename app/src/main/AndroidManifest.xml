@@ -6,6 +6,19 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Intervals must fire on time with the screen off; inexact alarms drift in doze. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- Capture confirmation reads back the file the camera app wrote. -->
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_IMAGES"
+        android:minSdkVersion="33" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
     <!-- Probe 1 tests whether this is what unblocks background activity launches. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission
@@ -19,6 +32,7 @@
     </queries>
 
     <application
+        android:name=".TimelapseApp"
         android:allowBackup="false"
         android:icon="@android:drawable/ic_menu_camera"
         android:label="OpenTimelapse Spike"
@@ -43,6 +57,15 @@
             android:showOnLockScreen="true"
             android:theme="@style/Theme.Transparent"
             android:turnScreenOn="true" />
+
+        <service
+            android:name=".service.TimelapseService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="timelapse_camera_automation" />
+        </service>
 
         <service
             android:name=".spike.SpikeService"
