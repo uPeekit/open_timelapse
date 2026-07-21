@@ -1,0 +1,20 @@
+*.iml
+.gradle/
+.idea/
+build/
+local.properties
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.keystore
+
+# ffmpeg build outputs (Phase 7) - the binary is a build artifact, the script is the source
+tools/ffmpeg-build/
+
+# Native binaries are build artifacts, never sources. The Phase 0 probe binary is pulled
+# off a device (see app/src/main/jniLibs/README.md); the Phase 7 ffmpeg binary will come
+# from tools/build-ffmpeg.sh. Neither belongs in git.
+app/src/main/jniLibs/**/*.so
