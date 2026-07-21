@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_service_description">Lets OpenTimelapse tap the shutter button of your camera app and unlock the screen between frames. It does not read or transmit screen content.</string>
+</resources>
