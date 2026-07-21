@@ -10,8 +10,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.peekit.opentimelapse.TimelapseApp
 import org.peekit.opentimelapse.core.engine.CapturedMedia
 import org.peekit.opentimelapse.core.engine.CycleRunner
@@ -21,7 +23,10 @@ import org.peekit.opentimelapse.core.engine.FrameFileResult
 import org.peekit.opentimelapse.core.engine.FrameStore
 import org.peekit.opentimelapse.core.engine.StartRejection
 import org.peekit.opentimelapse.core.engine.TimelapseEngine
+import org.peekit.opentimelapse.core.model.SessionManifest
 import org.peekit.opentimelapse.core.model.TimelapseConfig
+import org.peekit.opentimelapse.storage.FileFrameStore
+import java.io.File
 
 /**
  * Hosts a timelapse session for its whole lifetime.
@@ -45,6 +50,9 @@ class TimelapseService : Service() {
     /** The snapshot the engine reads at the start of each cycle. */
     @Volatile
     private var liveConfig: TimelapseConfig = TimelapseConfig()
+
+    @Volatile
+    private var manifest: SessionManifest? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -73,9 +81,6 @@ class TimelapseService : Service() {
 
         val waiter = AlarmWaiter(this, wakeLock)
         val sink = statusReportingSink()
-        val runner = CycleRunner(app.actuator, NoOpFrameStore, app.clock, waiter, sink)
-        val timelapseEngine = TimelapseEngine(runner, app.actuator, app.clock, waiter, sink)
-        engine = timelapseEngine
 
         sessionJob = scope.launch {
             // Loaded before anything reads it, so the first cycle cannot run on defaults.
@@ -85,7 +90,15 @@ class TimelapseService : Service() {
             }
 
             try {
+                // Resolved first so the session manifest records the real camera package.
                 if (!ensureCameraResolved()) return@launch
+
+                // A diagnostic cycle is not a session: recording one would leave a manifest
+                // claiming zero frames next to a photo that was actually taken.
+                val frameStore = if (singleCycle) NoOpFrameStore else openSession(liveConfig)
+                val runner = CycleRunner(app.actuator, frameStore, app.clock, waiter, sink)
+                val timelapseEngine = TimelapseEngine(runner, app.actuator, app.clock, waiter, sink)
+                engine = timelapseEngine
 
                 timelapseEngine.preflight(liveConfig)?.let { rejection ->
                     report(explain(rejection))
@@ -99,14 +112,52 @@ class TimelapseService : Service() {
                         else "Single cycle failed at ${outcome.failedStep}: ${outcome.detail}"
                     )
                 } else {
-                    val summary = timelapseEngine.runSession(sessionId()) { liveConfig }
+                    val summary = timelapseEngine.runSession(manifest?.id ?: sessionId()) { liveConfig }
                     report("Finished (${summary.stopReason}): ${summary.framesCaptured} frames")
                 }
             } finally {
+                // NonCancellable because Stop cancels this job: a suspend call in a
+                // cancelled coroutine throws at its first suspension point, which
+                // silently lost the final manifest write and reported 0 frames.
+                withContext(NonCancellable) { closeSession() }
                 watcher.cancel()
                 stopSelfSafely()
             }
         }
+    }
+
+    /**
+     * Starts recording a session and returns the store that will file its frames.
+     *
+     * With naming off nothing is touched: the camera's own filenames and metadata stay
+     * exactly as they are, and the manifest just records where the frames went.
+     */
+    private suspend fun openSession(config: TimelapseConfig): FrameStore {
+        val name = app.sessionStore.newSessionName()
+        val record = app.sessionStore.create(name, config, System.currentTimeMillis())
+        manifest = record
+        app.sessionStore.save(record)
+
+        if (!config.naming.enabled) {
+            app.log.message("Session $name - keeping the camera's own filenames")
+            return NoOpFrameStore
+        }
+        if (!app.storage.canRenameForeignFiles()) {
+            app.log.message(
+                "Naming is on but All-files access is not granted; frames will keep their " +
+                    "original names this session."
+            )
+            return NoOpFrameStore
+        }
+
+        app.log.message("Session $name -> ${record.folderPath} as ${config.naming.prefix}...")
+        return FileFrameStore(this, File(record.folderPath), config.naming, app.storage)
+    }
+
+    private suspend fun closeSession() {
+        val record = manifest ?: return
+        app.sessionStore.save(record.copy(endedAtMs = System.currentTimeMillis()))
+        manifest = null
     }
 
     /**
@@ -154,6 +205,12 @@ class TimelapseService : Service() {
             is EngineEvent.FrameCaptured -> {
                 framesCaptured++
                 notification.update("Running - frame ${event.index} captured", framesCaptured)
+
+                manifest = manifest?.copy(frameCount = framesCaptured, lastIndex = event.index)
+                // Flushed periodically so a flat battery still leaves a renderable session.
+                if (framesCaptured % MANIFEST_FLUSH_EVERY == 0) {
+                    manifest?.let { record -> scope.launch { app.sessionStore.save(record) } }
+                }
             }
 
             is EngineEvent.StepStarted -> notification.update("${event.step}...", framesCaptured)
@@ -201,6 +258,8 @@ class TimelapseService : Service() {
         const val ACTION_START = "org.peekit.opentimelapse.START"
         const val ACTION_STOP = "org.peekit.opentimelapse.STOP"
         const val ACTION_SINGLE_CYCLE = "org.peekit.opentimelapse.SINGLE_CYCLE"
+
+        private const val MANIFEST_FLUSH_EVERY = 5
 
         fun send(context: Context, action: String) {
             val intent = Intent(context, TimelapseService::class.java).setAction(action)

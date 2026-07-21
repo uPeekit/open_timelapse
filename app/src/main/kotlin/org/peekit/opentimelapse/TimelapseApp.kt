@@ -6,6 +6,8 @@ import org.peekit.opentimelapse.actuator.CameraResolver
 import org.peekit.opentimelapse.core.engine.Clock
 import org.peekit.opentimelapse.data.ConfigRepository
 import org.peekit.opentimelapse.data.LogRepository
+import org.peekit.opentimelapse.storage.SessionStore
+import org.peekit.opentimelapse.storage.StorageAccess
 
 /**
  * The dependency graph, wired by hand.
@@ -24,4 +26,8 @@ class TimelapseApp : Application() {
     val actuator by lazy { AndroidDeviceActuator(this) }
 
     val cameraResolver by lazy { CameraResolver(this) }
+
+    val storage by lazy { StorageAccess(this) }
+
+    val sessionStore by lazy { SessionStore(this, storage) }
 }

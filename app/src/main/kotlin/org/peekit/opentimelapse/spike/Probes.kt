@@ -11,6 +11,7 @@ import android.provider.MediaStore
 import android.provider.Settings
 import org.peekit.opentimelapse.WakeActivity
 import org.peekit.opentimelapse.accessibility.AccessibilityBridge
+import org.peekit.opentimelapse.TimelapseApp
 import org.peekit.opentimelapse.core.ui.ShutterFinder
 import org.peekit.opentimelapse.service.TimelapseService
 import java.io.File
@@ -33,6 +34,8 @@ object Probes {
             "start" -> TimelapseService.send(context, TimelapseService.ACTION_START)
             "stop" -> TimelapseService.send(context, TimelapseService.ACTION_STOP)
             "cycle" -> TimelapseService.send(context, TimelapseService.ACTION_SINGLE_CYCLE)
+            "config" -> configure(context, params)
+            "sessions" -> listSessions(context)
             "swipe" -> swipeSweep(context, params)
             "bal-service" -> backgroundLaunch(context, fromAccessibility = false)
             "bal-accessibility" -> backgroundLaunch(context, fromAccessibility = true)
@@ -123,6 +126,44 @@ object Probes {
             power.isInteractive && !keyguard.isKeyguardLocked,
             "screenOn=${power.isInteractive} lockedAfter=${keyguard.isKeyguardLocked} (no gesture dispatched)",
         )
+    }
+
+    /**
+     * Sets config over adb until the Settings screen exists:
+     *
+     *   --ez naming true --es prefix sunset --ei interval 15
+     */
+    private suspend fun configure(context: Context, params: Bundle?) {
+        val app = context.applicationContext as TimelapseApp
+        app.configRepository.update { config ->
+            config.copy(
+                intervalSeconds = params?.getInt("interval", config.intervalSeconds)
+                    ?: config.intervalSeconds,
+                naming = config.naming.copy(
+                    enabled = params?.getBoolean("naming", config.naming.enabled)
+                        ?: config.naming.enabled,
+                    prefix = params?.getString("prefix") ?: config.naming.prefix,
+                ),
+            )
+        }
+        val updated = app.configRepository.current()
+        SpikeLog.log(
+            "config: interval=${updated.intervalSeconds}s naming=${updated.naming.enabled} " +
+                "prefix=${updated.naming.prefix} camera=${updated.shutter.packageName}"
+        )
+        SpikeLog.log("config: allFilesAccess=${app.storage.canRenameForeignFiles()}")
+    }
+
+    private suspend fun listSessions(context: Context) {
+        val app = context.applicationContext as TimelapseApp
+        val sessions = app.sessionStore.loadAll()
+        SpikeLog.log("sessions: ${sessions.size} found under ${app.storage.sessionsRoot()}")
+        sessions.forEach {
+            SpikeLog.log(
+                "  ${it.name}: ${it.frameCount} frames, pattern=${it.inputPattern() ?: "original names"}, " +
+                    "renderable=${it.isRenderable}"
+            )
+        }
     }
 
     /**
