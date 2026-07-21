@@ -12,6 +12,7 @@ import android.provider.Settings
 import org.peekit.opentimelapse.WakeActivity
 import org.peekit.opentimelapse.accessibility.AccessibilityBridge
 import org.peekit.opentimelapse.TimelapseApp
+import org.peekit.opentimelapse.core.render.RenderSpec
 import org.peekit.opentimelapse.core.ui.ShutterFinder
 import org.peekit.opentimelapse.service.TimelapseService
 import java.io.File
@@ -36,6 +37,7 @@ object Probes {
             "cycle" -> TimelapseService.send(context, TimelapseService.ACTION_SINGLE_CYCLE)
             "config" -> configure(context, params)
             "sessions" -> listSessions(context)
+            "export" -> exportLatest(context)
             "swipe" -> swipeSweep(context, params)
             "bal-service" -> backgroundLaunch(context, fromAccessibility = false)
             "bal-accessibility" -> backgroundLaunch(context, fromAccessibility = true)
@@ -152,6 +154,23 @@ object Probes {
                 "prefix=${updated.naming.prefix} camera=${updated.shutter.packageName}"
         )
         SpikeLog.log("config: allFilesAccess=${app.storage.canRenameForeignFiles()}")
+    }
+
+    /** Writes the concat list and prints the ffmpeg command for the newest session. */
+    private suspend fun exportLatest(context: Context) {
+        val app = context.applicationContext as TimelapseApp
+        val latest = app.sessionStore.loadAll().firstOrNull()
+        if (latest == null) {
+            SpikeLog.log("export: no sessions recorded yet")
+            return
+        }
+        val export = app.sessionExporter.export(latest, RenderSpec())
+        if (export == null) {
+            SpikeLog.log("export: ${latest.name} has no recorded frames")
+            return
+        }
+        SpikeLog.log("export: list=${export.concatListPath}")
+        SpikeLog.log("export: ${export.command}")
     }
 
     private suspend fun listSessions(context: Context) {

@@ -31,6 +31,11 @@ data class ShutterResult(
 /** A file the camera app produced. One shutter press yields several of these in RAW mode. */
 data class CapturedMedia(
     val uri: String,
+    /**
+     * Absolute filesystem path, when MediaStore exposes one. Needed because a content://
+     * URI is useless to ffmpeg - a rendered session must reference real files.
+     */
+    val path: String? = null,
     val displayName: String,
     val mimeType: String,
     val sizeBytes: Long,

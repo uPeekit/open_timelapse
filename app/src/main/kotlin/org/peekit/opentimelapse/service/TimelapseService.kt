@@ -138,15 +138,20 @@ class TimelapseService : Service() {
         manifest = record
         app.sessionStore.save(record)
 
+        // The manifest must describe what actually happened, not what was configured:
+        // claiming a numbered sequence that was never produced would emit an ffmpeg
+        // command pointing at files that do not exist.
         if (!config.naming.enabled) {
             app.log.message("Session $name - keeping the camera's own filenames")
             return NoOpFrameStore
         }
         if (!app.storage.canRenameForeignFiles()) {
             app.log.message(
-                "Naming is on but All-files access is not granted; frames will keep their " +
-                    "original names this session."
+                "Naming is on but All-files access is not granted; frames keep their " +
+                    "original names this session and will render from a file list."
             )
+            manifest = record.copy(naming = record.naming.copy(enabled = false))
+            app.sessionStore.save(manifest!!)
             return NoOpFrameStore
         }
 
@@ -206,7 +211,15 @@ class TimelapseService : Service() {
                 framesCaptured++
                 notification.update("Running - frame ${event.index} captured", framesCaptured)
 
-                manifest = manifest?.copy(frameCount = framesCaptured, lastIndex = event.index)
+                manifest = manifest?.let { record ->
+                    record.copy(
+                        frameCount = framesCaptured,
+                        lastIndex = event.index,
+                        // Recorded whether or not frames were renamed - this list is what
+                        // makes a session renderable without touching the camera roll.
+                        framePaths = record.framePaths + event.paths,
+                    )
+                }
                 // Flushed periodically so a flat battery still leaves a renderable session.
                 if (framesCaptured % MANIFEST_FLUSH_EVERY == 0) {
                     manifest?.let { record -> scope.launch { app.sessionStore.save(record) } }
@@ -251,7 +264,8 @@ class TimelapseService : Service() {
     /** Frame filing arrives in Phase 4; until then frames keep the camera's own names. */
     private object NoOpFrameStore : FrameStore {
         override suspend fun fileFrame(media: List<CapturedMedia>, index: Int) =
-            FrameFileResult(ok = true, paths = media.map { it.uri })
+            // Real paths where MediaStore has them: a content:// URI cannot be rendered.
+            FrameFileResult(ok = true, paths = media.map { it.path ?: it.uri })
     }
 
     companion object {

@@ -19,6 +19,14 @@ data class SessionManifest(
     val endedAtMs: Long? = null,
     val naming: NamingConfig = NamingConfig(),
     val frameCount: Int = 0,
+    /**
+     * Absolute paths of the captured frames, in order.
+     *
+     * Recorded even when frames keep the camera's own filenames: this is what lets a
+     * session be rendered without renaming anything, by naming exactly its own files and
+     * nothing else that happens to share the folder.
+     */
+    val framePaths: List<String> = emptyList(),
     val firstIndex: Int = 0,
     val lastIndex: Int = 0,
 ) {

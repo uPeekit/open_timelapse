@@ -50,6 +50,7 @@ class MediaStoreWatcher(private val context: Context) {
             MediaStore.MediaColumns.MIME_TYPE,
             MediaStore.MediaColumns.SIZE,
             MediaStore.MediaColumns.DATE_ADDED,
+            @Suppress("DEPRECATION") MediaStore.MediaColumns.DATA,
         )
         // Files, not Images: some OEMs register DNG under a different media type, and a
         // frame that landed as a "file" still counts as a captured frame.
@@ -75,6 +76,8 @@ class MediaStoreWatcher(private val context: Context) {
                 val mimeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
                 val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
                 val addedColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED)
+                @Suppress("DEPRECATION")
+                val pathColumn = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
 
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idColumn)
@@ -84,6 +87,7 @@ class MediaStoreWatcher(private val context: Context) {
 
                     out += CapturedMedia(
                         uri = Uri.withAppendedPath(CONTENT_URI, id.toString()).toString(),
+                        path = if (pathColumn >= 0) cursor.getString(pathColumn) else null,
                         displayName = cursor.getString(nameColumn) ?: "unknown",
                         mimeType = cursor.getString(mimeColumn) ?: "application/octet-stream",
                         sizeBytes = size,
