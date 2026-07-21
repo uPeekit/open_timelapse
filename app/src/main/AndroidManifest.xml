@@ -54,7 +54,7 @@
         </service>
 
         <service
-            android:name=".accessibility.SpikeAccessibilityService"
+            android:name=".accessibility.TimelapseAccessibilityService"
             android:exported="true"
             android:label="OpenTimelapse Spike"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">

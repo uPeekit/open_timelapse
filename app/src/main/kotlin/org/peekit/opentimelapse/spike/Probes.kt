@@ -10,7 +10,7 @@ import android.os.PowerManager
 import android.provider.MediaStore
 import android.provider.Settings
 import org.peekit.opentimelapse.WakeActivity
-import org.peekit.opentimelapse.accessibility.SpikeAccessibilityService
+import org.peekit.opentimelapse.accessibility.AccessibilityBridge
 import org.peekit.opentimelapse.core.ui.ShutterFinder
 import java.io.File
 import kotlinx.coroutines.delay
@@ -49,9 +49,9 @@ object Probes {
         SpikeLog.log("isDeviceSecure=${keyguard.isDeviceSecure} isKeyguardLocked=${keyguard.isKeyguardLocked}")
         SpikeLog.log("isInteractive=${power.isInteractive} ignoringBatteryOptimisations=${power.isIgnoringBatteryOptimizations(context.packageName)}")
         SpikeLog.log("canDrawOverlays=${Settings.canDrawOverlays(context)}")
-        SpikeLog.log("accessibilityConnected=${SpikeAccessibilityService.instance != null}")
+        SpikeLog.log("accessibilityConnected=${AccessibilityBridge.service != null}")
         SpikeLog.log("cameraPackage(IMAGE_CAPTURE)=${resolveCameraPackage(context)}")
-        SpikeAccessibilityService.instance?.let { SpikeLog.log("screenBounds=${it.screenBounds()}") }
+        AccessibilityBridge.service?.let { SpikeLog.log("screenBounds=${it.screenBounds()}") }
     }
 
     /**
@@ -65,7 +65,7 @@ object Probes {
         val overlayGranted = Settings.canDrawOverlays(context)
 
         val launcher: Context? =
-            if (fromAccessibility) SpikeAccessibilityService.instance else context
+            if (fromAccessibility) AccessibilityBridge.service else context
         if (launcher == null) {
             SpikeLog.result(label, false, "accessibility service is not connected")
             return
@@ -128,7 +128,7 @@ object Probes {
      */
     private suspend fun swipeSweep(context: Context, params: Bundle?) {
         val keyguard = context.getSystemService(KeyguardManager::class.java)
-        val service = SpikeAccessibilityService.instance
+        val service = AccessibilityBridge.service
         if (service == null) {
             SpikeLog.result("swipe", false, "accessibility service is not connected")
             return
@@ -159,7 +159,7 @@ object Probes {
     private suspend fun keyguardGesture(context: Context) {
         val keyguard = context.getSystemService(KeyguardManager::class.java)
         val power = context.getSystemService(PowerManager::class.java)
-        val service = SpikeAccessibilityService.instance
+        val service = AccessibilityBridge.service
         if (service == null) {
             SpikeLog.result("keyguard", false, "accessibility service is not connected")
             return
@@ -201,7 +201,7 @@ object Probes {
     /** Probe 3. Does GLOBAL_ACTION_LOCK_SCREEN work while the camera owns the screen? */
     private suspend fun lockOverCamera(context: Context) {
         val power = context.getSystemService(PowerManager::class.java)
-        val service = SpikeAccessibilityService.instance
+        val service = AccessibilityBridge.service
         if (service == null) {
             SpikeLog.result("lock", false, "accessibility service is not connected")
             return
@@ -214,7 +214,7 @@ object Probes {
         }
         launchCamera(context, camera)
         delay(3_000)
-        SpikeLog.log("lock: foreground=${SpikeAccessibilityService.foregroundPackage} (wanted $camera)")
+        SpikeLog.log("lock: foreground=${AccessibilityBridge.service?.foregroundPackage()} (wanted $camera)")
 
         val accepted = service.lockScreen()
         delay(2_500)
@@ -264,7 +264,7 @@ object Probes {
      * UI and see whether the shutter comes out on top with no manufacturer knowledge.
      */
     private suspend fun shutterFinder(context: Context, click: Boolean) {
-        val service = SpikeAccessibilityService.instance
+        val service = AccessibilityBridge.service
         if (service == null) {
             SpikeLog.result("shutter", false, "accessibility service is not connected")
             return
@@ -278,9 +278,9 @@ object Probes {
         launchCamera(context, camera)
         delay(4_000)
 
-        val nodes = service.dumpNodes()
+        val nodes = service.activeWindowNodes()
         val clickable = nodes.count { it.clickable }
-        SpikeLog.log("shutter: foreground=${SpikeAccessibilityService.foregroundPackage} nodes=${nodes.size} clickable=$clickable")
+        SpikeLog.log("shutter: foreground=${AccessibilityBridge.service?.foregroundPackage()} nodes=${nodes.size} clickable=$clickable")
 
         val screen = service.screenBounds()
         val finder = ShutterFinder(screen)
@@ -310,7 +310,7 @@ object Probes {
         )
 
         if (click && best != null) {
-            val how = service.clickNodeAt(best.node.bounds)
+            val how = service.clickAt(best.node.bounds)
             SpikeLog.log("shutter: clicked via $how - check the gallery for a new photo")
         }
     }
@@ -329,7 +329,7 @@ object Probes {
             return
         }
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val launcher: Context = SpikeAccessibilityService.instance ?: context
+        val launcher: Context = AccessibilityBridge.service ?: context
         try {
             launcher.startActivity(intent)
             SpikeLog.log("launched $packageName")
@@ -341,7 +341,7 @@ object Probes {
     @Suppress("DEPRECATION")
     fun wakeScreen(context: Context) {
         val power = context.getSystemService(PowerManager::class.java)
-        val launcher: Context = SpikeAccessibilityService.instance ?: context
+        val launcher: Context = AccessibilityBridge.service ?: context
         try {
             launcher.startActivity(
                 Intent(context, WakeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
