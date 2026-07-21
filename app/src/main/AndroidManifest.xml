@@ -4,6 +4,8 @@
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Rendering outlives the screen; an hour of frames takes minutes to encode. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
@@ -80,6 +82,11 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="timelapse_camera_automation" />
         </service>
+
+        <service
+            android:name=".render.RenderService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProcessing" />
 
         <service
             android:name=".spike.SpikeService"

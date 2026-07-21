@@ -3,6 +3,8 @@ package org.peekit.opentimelapse.actuator
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import kotlinx.coroutines.delay
 import org.peekit.opentimelapse.core.engine.CapturedMedia
@@ -51,7 +53,11 @@ class MediaStoreWatcher(private val context: Context) {
             MediaStore.MediaColumns.SIZE,
             MediaStore.MediaColumns.DATE_ADDED,
             @Suppress("DEPRECATION") MediaStore.MediaColumns.DATA,
-        )
+        ) + if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            arrayOf(MediaStore.MediaColumns.RELATIVE_PATH)
+        } else {
+            emptyArray()
+        }
         // Files, not Images: some OEMs register DNG under a different media type, and a
         // frame that landed as a "file" still counts as a captured frame.
         val selection = "${MediaStore.MediaColumns.DATE_ADDED} >= ? AND " +
@@ -78,6 +84,7 @@ class MediaStoreWatcher(private val context: Context) {
                 val addedColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED)
                 @Suppress("DEPRECATION")
                 val pathColumn = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                val relativeColumn = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
 
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idColumn)
@@ -87,7 +94,7 @@ class MediaStoreWatcher(private val context: Context) {
 
                     out += CapturedMedia(
                         uri = Uri.withAppendedPath(CONTENT_URI, id.toString()).toString(),
-                        path = if (pathColumn >= 0) cursor.getString(pathColumn) else null,
+                        path = resolvePath(cursor, pathColumn, relativeColumn, nameColumn),
                         displayName = cursor.getString(nameColumn) ?: "unknown",
                         mimeType = cursor.getString(mimeColumn) ?: "application/octet-stream",
                         sizeBytes = size,
@@ -97,6 +104,30 @@ class MediaStoreWatcher(private val context: Context) {
             }
         }
         return out
+    }
+
+    /**
+     * The real filesystem path, which ffmpeg needs - it has no content resolver.
+     *
+     * DATA is redacted to null for files another app owns, so it is only a fast path.
+     * RELATIVE_PATH plus DISPLAY_NAME is not redacted, and direct reads of media files are
+     * permitted with READ_MEDIA_IMAGES, so the reconstructed path is readable.
+     */
+    private fun resolvePath(
+        cursor: android.database.Cursor,
+        pathColumn: Int,
+        relativeColumn: Int,
+        nameColumn: Int,
+    ): String? {
+        val data = if (pathColumn >= 0) cursor.getString(pathColumn) else null
+        if (!data.isNullOrBlank()) return data
+
+        if (relativeColumn < 0) return null
+        val relative = cursor.getString(relativeColumn)?.trim('/') ?: return null
+        val name = cursor.getString(nameColumn) ?: return null
+        @Suppress("DEPRECATION")
+        val root = Environment.getExternalStorageDirectory().absolutePath
+        return "$root/$relative/$name"
     }
 
     private companion object {

@@ -184,7 +184,9 @@ class CycleRunner(
 
         if (!config.naming.enabled) {
             skip(CycleStep.FILE_FRAME, "naming disabled")
-            return CycleOutcome(captured = true, paths = media.map { it.uri })
+            // Prefer the filesystem path: it is what a renderer needs, since a content://
+            // URI cannot be opened by ffmpeg. Falls back to the URI only when no path is known.
+            return CycleOutcome(captured = true, paths = media.map { it.path ?: it.uri })
         }
 
         events.emit(EngineEvent.StepStarted(clock.nowMs(), CycleStep.FILE_FRAME))

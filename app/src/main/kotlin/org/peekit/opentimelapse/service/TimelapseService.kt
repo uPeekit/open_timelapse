@@ -264,7 +264,8 @@ class TimelapseService : Service() {
     /** Frame filing arrives in Phase 4; until then frames keep the camera's own names. */
     private object NoOpFrameStore : FrameStore {
         override suspend fun fileFrame(media: List<CapturedMedia>, index: Int) =
-            // Real paths where MediaStore has them: a content:// URI cannot be rendered.
+            // Unused for path selection - CycleRunner skips the store when naming is off -
+            // but kept correct: prefer the real path a renderer can open.
             FrameFileResult(ok = true, paths = media.map { it.path ?: it.uri })
     }
 

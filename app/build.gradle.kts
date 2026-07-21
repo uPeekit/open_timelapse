@@ -37,6 +37,17 @@ android {
         compose = true
     }
 
+    // Per-ABI APKs so neither ships a 4MB ffmpeg binary it cannot run. A universal APK is
+    // also emitted for convenient sideloading.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = true
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false

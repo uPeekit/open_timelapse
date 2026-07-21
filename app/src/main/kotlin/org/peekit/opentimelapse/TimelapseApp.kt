@@ -6,6 +6,7 @@ import org.peekit.opentimelapse.actuator.CameraResolver
 import org.peekit.opentimelapse.core.engine.Clock
 import org.peekit.opentimelapse.data.ConfigRepository
 import org.peekit.opentimelapse.data.LogRepository
+import org.peekit.opentimelapse.render.FfmpegRunner
 import org.peekit.opentimelapse.storage.SessionExporter
 import org.peekit.opentimelapse.storage.SessionStore
 import org.peekit.opentimelapse.storage.StorageAccess
@@ -33,4 +34,6 @@ class TimelapseApp : Application() {
     val sessionStore by lazy { SessionStore(this, storage) }
 
     val sessionExporter by lazy { SessionExporter(this) }
+
+    val ffmpeg by lazy { FfmpegRunner(this) }
 }

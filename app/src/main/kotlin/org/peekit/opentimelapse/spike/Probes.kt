@@ -12,7 +12,9 @@ import android.provider.Settings
 import org.peekit.opentimelapse.WakeActivity
 import org.peekit.opentimelapse.accessibility.AccessibilityBridge
 import org.peekit.opentimelapse.TimelapseApp
+import org.peekit.opentimelapse.core.render.Encoder
 import org.peekit.opentimelapse.core.render.RenderSpec
+import org.peekit.opentimelapse.render.RenderService
 import org.peekit.opentimelapse.core.ui.ShutterFinder
 import org.peekit.opentimelapse.service.TimelapseService
 import java.io.File
@@ -38,6 +40,8 @@ object Probes {
             "config" -> configure(context, params)
             "sessions" -> listSessions(context)
             "export" -> exportLatest(context)
+            "ffmpeg" -> ffmpegInfo(context)
+            "render" -> renderLatest(context, params)
             "swipe" -> swipeSweep(context, params)
             "bal-service" -> backgroundLaunch(context, fromAccessibility = false)
             "bal-accessibility" -> backgroundLaunch(context, fromAccessibility = true)
@@ -171,6 +175,31 @@ object Probes {
         }
         SpikeLog.log("export: list=${export.concatListPath}")
         SpikeLog.log("export: ${export.command}")
+    }
+
+    /** Confirms the bundled binary runs at all, and reports what it can encode. */
+    private suspend fun ffmpegInfo(context: Context) {
+        val app = context.applicationContext as TimelapseApp
+        val binary = app.ffmpeg.binary()
+        SpikeLog.log("ffmpeg: path=${binary?.absolutePath ?: "MISSING"} executable=${binary?.canExecute()}")
+        SpikeLog.log("ffmpeg: ${app.ffmpeg.version() ?: "did not run"}")
+    }
+
+    /** Renders the newest session so the whole pipeline can be exercised over adb. */
+    private suspend fun renderLatest(context: Context, params: Bundle?) {
+        val app = context.applicationContext as TimelapseApp
+        val latest = app.sessionStore.loadAll().firstOrNull { it.frameCount > 0 }
+        if (latest == null) {
+            SpikeLog.log("render: no session with frames")
+            return
+        }
+        val spec = RenderSpec(
+            fps = params?.getInt("fps", 10) ?: 10,
+            longEdgePx = params?.getInt("edge", 1280) ?: 1280,
+            encoder = if (params?.getBoolean("x264", true) != false) Encoder.X264 else Encoder.HARDWARE,
+        )
+        SpikeLog.log("render: ${latest.name} (${latest.frameCount} frames) with ${spec.encoder}")
+        RenderService.render(context, latest.id, spec)
     }
 
     private suspend fun listSessions(context: Context) {
