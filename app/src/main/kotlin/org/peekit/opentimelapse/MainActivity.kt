@@ -18,6 +18,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import org.peekit.opentimelapse.core.model.TimelapseConfig
+import org.peekit.opentimelapse.core.render.Encoder
+import org.peekit.opentimelapse.core.render.RenderSpec
+import org.peekit.opentimelapse.render.RenderService
 import org.peekit.opentimelapse.service.TimelapseService
 import org.peekit.opentimelapse.ui.MainActions
 import org.peekit.opentimelapse.ui.MainScreen
@@ -29,6 +32,7 @@ class MainActivity : ComponentActivity() {
     private val app by lazy { application as TimelapseApp }
 
     private var checks by mutableStateOf<List<SetupCheck>>(emptyList())
+    private var sessions by mutableStateOf<List<org.peekit.opentimelapse.core.model.SessionManifest>>(emptyList())
 
     private val requestPermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -49,6 +53,7 @@ class MainActivity : ComponentActivity() {
                         config = config,
                         checks = checks,
                         log = log,
+                        sessions = sessions,
                         actions = MainActions(
                             onStart = { TimelapseService.send(this, TimelapseService.ACTION_START) },
                             onStop = { TimelapseService.send(this, TimelapseService.ACTION_STOP) },
@@ -59,6 +64,7 @@ class MainActivity : ComponentActivity() {
                             onConfigChange = { transform ->
                                 lifecycleScope.launch { app.configRepository.update(transform) }
                             },
+                            sessionActions = sessionActions(),
                         ),
                         modifier = Modifier.padding(padding),
                     )
@@ -79,6 +85,34 @@ class MainActivity : ComponentActivity() {
     private fun refreshChecks() {
         lifecycleScope.launch {
             checks = SetupChecks.evaluate(this@MainActivity, app.configRepository.current())
+            sessions = app.sessionStore.loadAll()
+        }
+    }
+
+    private fun sessionActions() = org.peekit.opentimelapse.ui.SessionActions(
+        onRenderFast = { session ->
+            RenderService.render(this, session.id, RenderSpec(encoder = Encoder.HARDWARE))
+        },
+        onRenderArchival = { session ->
+            RenderService.render(this, session.id, RenderSpec(encoder = Encoder.X264))
+        },
+        onCopyCommand = { session -> copyCommand(session) },
+        onDelete = { session ->
+            lifecycleScope.launch {
+                app.sessionStore.delete(session.id)
+                sessions = app.sessionStore.loadAll()
+            }
+        },
+    )
+
+    private fun copyCommand(session: org.peekit.opentimelapse.core.model.SessionManifest) {
+        lifecycleScope.launch {
+            val export = app.sessionExporter.export(session, RenderSpec()) ?: return@launch
+            val clipboard = getSystemService(android.content.ClipboardManager::class.java)
+            clipboard?.setPrimaryClip(
+                android.content.ClipData.newPlainText("ffmpeg command", export.command)
+            )
+            app.log.message("ffmpeg command copied to clipboard")
         }
     }
 

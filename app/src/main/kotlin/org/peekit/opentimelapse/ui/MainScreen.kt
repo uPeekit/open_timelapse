@@ -36,6 +36,7 @@ data class MainActions(
     val onSingleCycle: () -> Unit,
     val onFix: (SetupCheck) -> Unit,
     val onConfigChange: ((TimelapseConfig) -> TimelapseConfig) -> Unit,
+    val sessionActions: SessionActions,
 )
 
 @Composable
@@ -43,6 +44,7 @@ fun MainScreen(
     config: TimelapseConfig,
     checks: List<SetupCheck>,
     log: List<LogEntry>,
+    sessions: List<org.peekit.opentimelapse.core.model.SessionManifest>,
     actions: MainActions,
     modifier: Modifier = Modifier,
 ) {
@@ -59,6 +61,7 @@ fun MainScreen(
         SetupSection(checks, actions.onFix)
         ControlsSection(blocking.isEmpty(), actions)
         SettingsSection(config, actions.onConfigChange)
+        SessionsSection(sessions, actions.sessionActions)
         LogSection(log)
     }
 }
