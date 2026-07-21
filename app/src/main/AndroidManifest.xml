@@ -19,8 +19,6 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
-    <!-- Probe 1 tests whether this is what unblocks background activity launches. -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
@@ -35,19 +33,25 @@
         android:name=".TimelapseApp"
         android:allowBackup="false"
         android:icon="@android:drawable/ic_menu_camera"
-        android:label="OpenTimelapse Spike"
+        android:label="OpenTimelapse"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.Light">
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
         <activity
-            android:name=".spike.SpikeActivity"
+            android:name=".MainActivity"
             android:exported="true"
-            android:label="OpenTimelapse Spike">
+            android:label="OpenTimelapse">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Phase 0 diagnostics console; reachable from adb, not from the launcher. -->
+        <activity
+            android:name=".spike.SpikeActivity"
+            android:exported="true"
+            android:label="OpenTimelapse diagnostics" />
 
         <activity
             android:name=".WakeActivity"
@@ -79,7 +83,7 @@
         <service
             android:name=".accessibility.TimelapseAccessibilityService"
             android:exported="true"
-            android:label="OpenTimelapse Spike"
+            android:label="OpenTimelapse"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
