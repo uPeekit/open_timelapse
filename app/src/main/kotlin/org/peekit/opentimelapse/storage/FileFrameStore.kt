@@ -59,9 +59,14 @@ class FileFrameStore(
                 moves += Move(source, target, item.uri)
             }
 
-            // The gallery still points at the old locations until MediaStore is told.
-            forgetOldEntries(moves)
-            scan(moves.map { it.target })
+            // Scan both ends: the old path so its stale row is dropped, the new one so the
+            // gallery finds the frame where it now lives.
+            //
+            // Deliberately NOT contentResolver.delete() on the old row. That row still
+            // references the same inode after a rename, so deleting it deletes the frame
+            // we just moved - observed destroying a captured frame that the log had
+            // already reported as filed successfully.
+            scan(moves.flatMap { listOf(it.source, it.target) })
 
             FrameFileResult(ok = true, paths = moves.map { it.target.absolutePath })
         }
@@ -87,14 +92,6 @@ class FileFrameStore(
                 cursor.getString(0)?.let(::File)?.takeIf { it.exists() }
             }
         }.getOrNull()
-    }
-
-    private fun forgetOldEntries(moves: List<Move>) {
-        moves.forEach { move ->
-            runCatching {
-                context.contentResolver.delete(Uri.parse(move.sourceUri), null, null)
-            }
-        }
     }
 
     private fun scan(files: List<File>) {

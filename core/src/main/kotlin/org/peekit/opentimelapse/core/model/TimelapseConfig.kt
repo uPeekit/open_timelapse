@@ -80,7 +80,11 @@ data class DelayConfig(
     val afterCameraReadyMs: Long = 2_000L,
     /** Only used when capture verification is off; otherwise we wait for the real file. */
     val afterShutterMs: Long = 300L,
-    val cameraForegroundTimeoutMs: Long = 4_000L,
+    /**
+     * A cold camera start is far slower than a resume: 4s was enough when the app was
+     * already warm in recents and timed out every cycle when it was not.
+     */
+    val cameraForegroundTimeoutMs: Long = 12_000L,
 )
 
 /**
@@ -111,8 +115,13 @@ enum class ShutterMode {
 @Serializable
 data class CaptureConfig(
     val verifyViaMediaStore: Boolean = true,
-    /** Generous: night mode and multi-second Pro exposures are legitimate. */
-    val captureTimeoutMs: Long = 5_000L,
+    /**
+     * Measured on a Galaxy S20: MediaStore registered a frame 3.9s after the shutter, and
+     * others took longer than 5s - photos that existed on disk were reported as failures.
+     * Costs nothing to be generous, since the wait ends the moment the file appears, and
+     * night mode or multi-second Pro exposures are legitimately slow.
+     */
+    val captureTimeoutMs: Long = 15_000L,
     /** After the first new file, how long to keep collecting siblings (the DNG next to the JPEG). */
     val siblingQuietMs: Long = 700L,
 )

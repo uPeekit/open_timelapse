@@ -19,6 +19,16 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+
+    <!--
+        Renaming a photo the camera app owns is impossible without this on Android 11+:
+        the scoped-storage alternative asks the user to confirm every single file, which
+        an unattended loop cannot do. Optional at runtime - without it, frames simply keep
+        the camera's own names and the session renders from a file list instead.
+    -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
