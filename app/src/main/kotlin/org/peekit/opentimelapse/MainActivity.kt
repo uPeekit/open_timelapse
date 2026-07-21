@@ -65,6 +65,9 @@ class MainActivity : ComponentActivity() {
                                 lifecycleScope.launch { app.configRepository.update(transform) }
                             },
                             sessionActions = sessionActions(),
+                            onOpenLicenses = {
+                                startActivity(Intent(this@MainActivity, org.peekit.opentimelapse.ui.LicensesActivity::class.java))
+                            },
                         ),
                         modifier = Modifier.padding(padding),
                     )

@@ -59,6 +59,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.LicensesActivity"
+            android:exported="false"
+            android:label="Open source licences" />
+
         <!-- Phase 0 diagnostics console; reachable from adb, not from the launcher. -->
         <activity
             android:name=".spike.SpikeActivity"

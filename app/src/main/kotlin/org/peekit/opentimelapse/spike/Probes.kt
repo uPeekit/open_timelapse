@@ -327,26 +327,26 @@ object Probes {
      */
     private fun execNativeBinary(context: Context) {
         val dir = context.applicationInfo.nativeLibraryDir
-        // The device's own /system/bin/sh, renamed. Chosen over toybox because toybox
-        // dispatches on argv[0], which ProcessBuilder cannot set apart from the path.
-        val binary = File(dir, "libshprobe.so")
+        // Now that the app ships a real ffmpeg, that binary IS the exec test - a better
+        // one than the pulled-shell hack the spike originally used.
+        val binary = File(dir, "libffmpeg.so")
         SpikeLog.log("exec: dir=$dir exists=${binary.exists()} canExecute=${binary.canExecute()} size=${binary.length()}")
 
         if (!binary.exists()) {
-            SpikeLog.result("exec", false, "binary was not extracted - check useLegacyPackaging")
+            SpikeLog.result("exec", false, "ffmpeg binary was not extracted - check useLegacyPackaging")
             return
         }
 
         try {
-            val process = ProcessBuilder(binary.absolutePath, "-c", "echo $MARKER")
+            val process = ProcessBuilder(binary.absolutePath, "-version")
                 .redirectErrorStream(true)
                 .start()
-            val output = process.inputStream.bufferedReader().readText().trim()
+            val firstLine = process.inputStream.bufferedReader().readLine().orEmpty()
             val exit = process.waitFor()
             SpikeLog.result(
                 "exec",
-                exit == 0 && output.contains(MARKER),
-                "exit=$exit output='$output'",
+                exit == 0 && firstLine.contains("ffmpeg version"),
+                "exit=$exit output='$firstLine'",
             )
         } catch (t: Throwable) {
             SpikeLog.result("exec", false, "${t.javaClass.simpleName}: ${t.message}")
@@ -452,5 +452,4 @@ object Probes {
         SpikeLog.log("wake: legacy FULL_WAKE_LOCK acquired, interactive=${power.isInteractive}")
     }
 
-    private const val MARKER = "opentimelapse-exec-ok"
 }

@@ -37,6 +37,7 @@ data class MainActions(
     val onFix: (SetupCheck) -> Unit,
     val onConfigChange: ((TimelapseConfig) -> TimelapseConfig) -> Unit,
     val sessionActions: SessionActions,
+    val onOpenLicenses: () -> Unit,
 )
 
 @Composable
@@ -63,6 +64,10 @@ fun MainScreen(
         SettingsSection(config, actions.onConfigChange)
         SessionsSection(sessions, actions.sessionActions)
         LogSection(log)
+
+        androidx.compose.material3.TextButton(onClick = actions.onOpenLicenses) {
+            Text("Open source licences")
+        }
     }
 }
 
