@@ -20,8 +20,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 data class SessionActions(
-    val onRenderFast: (SessionManifest) -> Unit,
-    val onRenderArchival: (SessionManifest) -> Unit,
+    val onRender: (SessionManifest) -> Unit,
     val onCopyCommand: (SessionManifest) -> Unit,
     val onDelete: (SessionManifest) -> Unit,
 )
@@ -53,11 +52,8 @@ private fun SessionRow(session: SessionManifest, actions: SessionActions) {
 
         val renderable = session.frameCount > 0
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { actions.onRenderFast(session) }, enabled = renderable) {
+            OutlinedButton(onClick = { actions.onRender(session) }, enabled = renderable) {
                 Text("Render")
-            }
-            OutlinedButton(onClick = { actions.onRenderArchival(session) }, enabled = renderable) {
-                Text("Archival")
             }
             OutlinedButton(onClick = { actions.onCopyCommand(session) }, enabled = renderable) {
                 Text("Copy ffmpeg")

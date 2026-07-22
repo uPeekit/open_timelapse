@@ -69,7 +69,9 @@ class RenderService : Service() {
         val spec = RenderSpec(
             fps = intent.getIntExtra(EXTRA_FPS, 30),
             longEdgePx = intent.getIntExtra(EXTRA_LONG_EDGE, 1920),
-            encoder = if (intent.getBooleanExtra(EXTRA_ARCHIVAL, false)) Encoder.X264 else Encoder.HARDWARE,
+            // Always x264: the MediaCodec encoder cannot run from a standalone binary,
+            // which has no JavaVM for ffmpeg's JNI bridge. See Encoder.HARDWARE.
+            encoder = Encoder.X264,
             deflicker = intent.getBooleanExtra(EXTRA_DEFLICKER, false),
         )
 
@@ -83,8 +85,8 @@ class RenderService : Service() {
                 finish("This build has no ffmpeg binary; use the exported command on a computer instead")
                 return@launch
             }
-            if (spec.encoder == Encoder.X264 && !isCharging()) {
-                app.log.message("Archival encoding is slow and hot - plug the phone in for best results")
+            if (!isCharging()) {
+                app.log.message("Encoding is software-only and slow - plug the phone in for a long session")
             }
 
             render(manifest, spec)

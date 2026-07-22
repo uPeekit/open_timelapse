@@ -18,7 +18,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import org.peekit.opentimelapse.core.model.TimelapseConfig
-import org.peekit.opentimelapse.core.render.Encoder
 import org.peekit.opentimelapse.core.render.RenderSpec
 import org.peekit.opentimelapse.render.RenderService
 import org.peekit.opentimelapse.service.TimelapseService
@@ -93,11 +92,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sessionActions() = org.peekit.opentimelapse.ui.SessionActions(
-        onRenderFast = { session ->
-            RenderService.render(this, session.id, RenderSpec(encoder = Encoder.HARDWARE))
-        },
-        onRenderArchival = { session ->
-            RenderService.render(this, session.id, RenderSpec(encoder = Encoder.X264))
+        onRender = { session ->
+            RenderService.render(this, session.id, RenderSpec())
         },
         onCopyCommand = { session -> copyCommand(session) },
         onDelete = { session ->

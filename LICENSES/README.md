@@ -27,10 +27,18 @@ binary itself is still covered, so any APK you hand to someone else must be acco
 3. **A notice** that the app bundles GPL software - shown in-app under "Open source
    licences", and stated in the README.
 
-If you would rather avoid GPL obligations entirely, drop `--enable-gpl --enable-libx264`
-from the build script. The binary becomes LGPL and still renders through
-`h264_mediacodec`; you lose `-crf` (hardware encoding is bitrate-controlled) and the
-`Archival` quality mode.
+### Why the LGPL option is not actually available
+
+The obvious way to avoid the GPL would be to drop `--enable-gpl --enable-libx264` and
+encode through `h264_mediacodec` instead. **That does not work here.** ffmpeg reaches
+MediaCodec through JNI, which needs a `JavaVM` supplied by the hosting app; a standalone
+executable run with `ProcessBuilder` has none, and the encoder aborts with
+`stack corruption detected` (measured on a Galaxy S20).
+
+So libx264 is the only encoder that functions in this design, and the GPL obligations
+above are unavoidable while rendering happens on the device. Hardware encoding would
+require driving Android's MediaCodec API from Kotlin rather than using ffmpeg for the
+encode step - a different implementation, not a build flag.
 
 ### Reproducing the binary
 
