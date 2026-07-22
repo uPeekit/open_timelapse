@@ -40,6 +40,7 @@ object Probes {
             "calibrate" -> TimelapseService.send(context, TimelapseService.ACTION_CALIBRATE)
             "config" -> configure(context, params)
             "sessions" -> listSessions(context)
+            "delete-latest" -> deleteLatest(context)
             "export" -> exportLatest(context)
             "ffmpeg" -> ffmpegInfo(context)
             "render" -> renderLatest(context, params)
@@ -201,6 +202,22 @@ object Probes {
         )
         SpikeLog.log("render: ${latest.name} (${latest.frameCount} frames) with ${spec.encoder}")
         RenderService.render(context, latest.id, spec)
+    }
+
+    /** Exercises exactly what the Sessions screen's Delete button calls. */
+    private suspend fun deleteLatest(context: Context) {
+        val app = context.applicationContext as TimelapseApp
+        val latest = app.sessionStore.loadAll().firstOrNull()
+        if (latest == null) {
+            SpikeLog.log("delete: nothing to delete")
+            return
+        }
+        SpikeLog.log("delete: removing ${latest.id}")
+        app.sessionStore.delete(latest.id)
+        val remaining = app.sessionStore.loadAll()
+        SpikeLog.log(
+            "delete: ${remaining.size} left; still present=${remaining.any { it.id == latest.id }}"
+        )
     }
 
     private suspend fun listSessions(context: Context) {
