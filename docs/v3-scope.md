@@ -156,7 +156,33 @@ with whatever the user already runs, and keeps the orchestration out of a timela
 ```
 Battery ≤ 40%  →  POST <url>   (start charging)
 Battery ≥ 80%  →  POST <url>   (stop charging)
+              [ Test ]
 ```
+
+**Only while a session is running.** Decided rather than assumed: it means no permanently
+running battery watcher, no background power cost between shoots, and the listener simply
+registers and unregisters with the foreground service that already exists for the session.
+
+**Four details that decide whether this works at all**
+
+1. **Fire on the crossing, not the level.** `if level <= 40 → POST` fires every cycle while
+   the battery sits at 39%. Edge-triggered with re-arming: send once crossing down through
+   the low mark, and not again until it has been back above the high one.
+2. **Charging state, not just level.** "≥ high *and charging*" → stop; "≤ low *and not
+   charging*" → start. Otherwise an already-unplugged phone is repeatedly told to stop
+   charging.
+3. **Method, headers and body configurable.** IFTTT accepts a bare GET, Home Assistant
+   wants a POST, a REST endpoint may need a token header. URL-only would exclude half the
+   plausible integrations.
+4. **A Test button.** Otherwise verifying a setup means waiting for a real battery to reach
+   40%, turning a three-second check into a three-hour one.
+
+**Failures are logged and never interrupt the session.** A socket that did not switch must
+not cost frames.
+
+**The battery-floor stop condition is the backstop.** Webhooks are best effort - the socket
+may be unplugged, the hub down, the wifi gone. Stopping the session at a floor needs no
+network and is what actually protects the phone.
 
 **Recommended orchestrator: Home Assistant.** Unlimited automations, no per-applet cap, and
 Tuya/SmartLife sockets work through the Tuya integration or LocalTuya - the latter entirely
