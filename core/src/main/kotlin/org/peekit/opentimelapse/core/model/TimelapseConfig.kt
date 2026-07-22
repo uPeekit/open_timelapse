@@ -20,6 +20,12 @@ data class TimelapseConfig(
     val naming: NamingConfig = NamingConfig(),
     val session: SessionConfig = SessionConfig(),
     val calibration: CalibrationState = CalibrationState(),
+    /**
+     * A hand-edited ffmpeg command reused for every render, blank until someone takes over.
+     * Kept in config rather than per session: a command that worked for one shoot is
+     * almost always the one wanted for the next.
+     */
+    val customRenderCommand: String = "",
 ) {
     /**
      * Resolves combinations that are individually valid but jointly meaningless.

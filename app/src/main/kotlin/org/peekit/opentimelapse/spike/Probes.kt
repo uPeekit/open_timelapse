@@ -44,6 +44,7 @@ object Probes {
             "export" -> exportLatest(context)
             "ffmpeg" -> ffmpegInfo(context)
             "render" -> renderLatest(context, params)
+            "set-command" -> setRenderCommand(context, params)
             "swipe" -> swipeSweep(context, params)
             "bal-service" -> backgroundLaunch(context, fromAccessibility = false)
             "bal-accessibility" -> backgroundLaunch(context, fromAccessibility = true)
@@ -199,6 +200,7 @@ object Probes {
             fps = params?.getInt("fps", 10) ?: 10,
             longEdgePx = params?.getInt("edge", 1280) ?: 1280,
             encoder = if (params?.getBoolean("x264", true) != false) Encoder.X264 else Encoder.HARDWARE,
+            customCommand = app.configRepository.current().customRenderCommand,
         )
         SpikeLog.log("render: ${latest.name} (${latest.frameCount} frames) with ${spec.encoder}")
         RenderService.render(context, latest.id, spec)
@@ -218,6 +220,14 @@ object Probes {
         SpikeLog.log(
             "delete: ${remaining.size} left; still present=${remaining.any { it.id == latest.id }}"
         )
+    }
+
+    /** Sets or clears the custom render command over adb. */
+    private suspend fun setRenderCommand(context: Context, params: Bundle?) {
+        val app = context.applicationContext as TimelapseApp
+        val command = params?.getString("cmd").orEmpty()
+        app.configRepository.update { it.copy(customRenderCommand = command) }
+        SpikeLog.log("custom command = '${app.configRepository.current().customRenderCommand}'")
     }
 
     private suspend fun listSessions(context: Context) {

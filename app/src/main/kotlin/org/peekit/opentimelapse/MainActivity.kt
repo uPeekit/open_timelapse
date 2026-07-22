@@ -103,7 +103,10 @@ class MainActivity : ComponentActivity() {
 
     private fun sessionActions() = org.peekit.opentimelapse.ui.SessionActions(
         onRender = { session ->
-            RenderService.render(this, session.id, RenderSpec())
+            lifecycleScope.launch {
+                val stored = app.configRepository.current().customRenderCommand
+                RenderService.render(this@MainActivity, session.id, RenderSpec(customCommand = stored))
+            }
         },
         onCopyCommand = { session -> copyCommand(session) },
         onDelete = { session ->

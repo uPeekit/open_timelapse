@@ -20,6 +20,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -29,6 +30,8 @@ import androidx.compose.ui.unit.sp
 import org.peekit.opentimelapse.core.model.EndMode
 import org.peekit.opentimelapse.core.model.StartTrigger
 import org.peekit.opentimelapse.core.model.StopTime
+import org.peekit.opentimelapse.core.render.FfmpegCommandBuilder
+import org.peekit.opentimelapse.core.render.RenderSpec
 import org.peekit.opentimelapse.core.model.CycleMode
 import org.peekit.opentimelapse.core.model.TimelapseConfig
 import org.peekit.opentimelapse.data.LogEntry
@@ -69,6 +72,7 @@ fun MainScreen(
         ControlsSection(blocking.isEmpty(), actions)
         SettingsSection(config, actions.onConfigChange)
         SessionsSection(sessions, actions.sessionActions)
+        RenderCommandSection(config, actions.onConfigChange)
         LogSection(log)
 
         androidx.compose.material3.TextButton(onClick = actions.onOpenLicenses) {
@@ -406,6 +410,62 @@ private fun StopConditionSettings(
         }
 
         EndMode.MANUAL -> Unit
+    }
+}
+
+/**
+ * The ffmpeg command, shown and editable.
+ *
+ * Bundling ffmpeg rather than MediaCodec was a bet on flexibility, and until now none of it
+ * was reachable - no deflicker, no different CRF, no crop. The generated command is the
+ * baseline and stays in charge until someone deliberately edits it.
+ */
+@Composable
+private fun RenderCommandSection(
+    config: TimelapseConfig,
+    onChange: ((TimelapseConfig) -> TimelapseConfig) -> Unit,
+) {
+    val generated = remember {
+        FfmpegCommandBuilder.asShellCommand(
+            FfmpegCommandBuilder.fromConcatList("<frames>", RenderSpec(), "<output>")
+        )
+    }
+    val custom = config.customRenderCommand
+    val editing = custom.isNotBlank()
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Render command", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (editing) {
+                    "Using your command. The output path is still filled in by the app."
+                } else {
+                    "Generated from the settings above. Edit it to take control - deflicker, " +
+                        "a different quality, a crop."
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+
+            OutlinedTextField(
+                value = if (editing) custom else generated,
+                onValueChange = { typed ->
+                    onChange { it.copy(customRenderCommand = typed) }
+                },
+                label = { Text(if (editing) "Your command" else "Generated (edit to override)") },
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                ),
+                minLines = 3,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            if (editing) {
+                OutlinedButton(onClick = { onChange { it.copy(customRenderCommand = "") } }) {
+                    Text("Reset to generated")
+                }
+            }
+        }
     }
 }
 

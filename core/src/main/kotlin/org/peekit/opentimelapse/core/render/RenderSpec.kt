@@ -28,7 +28,18 @@ data class RenderSpec(
     val lookahead: Int = 12,
     /** Smooths the exposure flicker between frames that plagues automatic-exposure timelapses. */
     val deflicker: Boolean = false,
-)
+    /**
+     * A hand-edited command, used verbatim instead of the generated one.
+     *
+     * Bundling ffmpeg was a bet on flexibility, and every other field here is a guess at
+     * what someone might want. This is the escape hatch: two-pass, a crop, an unusual
+     * filter chain, a codec nobody anticipated. Blank means the generated command is used,
+     * so the fields above keep working until someone deliberately takes over.
+     */
+    val customCommand: String = "",
+) {
+    val usesCustomCommand: Boolean get() = customCommand.isNotBlank()
+}
 
 enum class Encoder {
     /**

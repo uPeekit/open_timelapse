@@ -64,6 +64,47 @@ object FfmpegCommandBuilder {
             add(outputPath)
         }
 
+    /**
+     * Splits a hand-written command into argv.
+     *
+     * Handles quoted sections, because paths contain spaces and filter graphs contain
+     * commas and colons that must survive as one argument. A leading "ffmpeg" is dropped so
+     * a command copied from the app, or from a desktop, can be pasted straight back.
+     */
+    fun parseCommand(command: String): List<String> {
+        val argv = mutableListOf<String>()
+        val current = StringBuilder()
+        var quote: Char? = null
+
+        for (character in command.trim()) {
+            when {
+                quote != null && character == quote -> quote = null
+                quote != null -> current.append(character)
+                character == '\'' || character == '"' -> quote = character
+                character.isWhitespace() -> {
+                    if (current.isNotEmpty()) {
+                        argv += current.toString()
+                        current.clear()
+                    }
+                }
+                else -> current.append(character)
+            }
+        }
+        if (current.isNotEmpty()) argv += current.toString()
+
+        return argv.drop(if (argv.firstOrNull()?.endsWith("ffmpeg") == true) 1 else 0)
+    }
+
+    /**
+     * Puts the real output path into a hand-edited command.
+     *
+     * The user never types the destination: a render has to land where the app can then
+     * publish it, and an arbitrary path would be unreachable or unwritable. The last
+     * argument is the output by ffmpeg's own convention.
+     */
+    fun withOutput(argv: List<String>, outputPath: String): List<String> =
+        if (argv.isEmpty()) listOf(outputPath) else argv.dropLast(1) + outputPath
+
     /** The same command as a line the user can paste on a desktop. */
     fun asShellCommand(argv: List<String>): String =
         (listOf("ffmpeg") + argv).joinToString(" ") { token ->

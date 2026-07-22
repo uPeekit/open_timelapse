@@ -73,6 +73,7 @@ class RenderService : Service() {
             // which has no JavaVM for ffmpeg's JNI bridge. See Encoder.HARDWARE.
             encoder = Encoder.X264,
             deflicker = intent.getBooleanExtra(EXTRA_DEFLICKER, false),
+            customCommand = intent.getStringExtra(EXTRA_COMMAND).orEmpty(),
         )
 
         job = scope.launch {
@@ -134,6 +135,17 @@ class RenderService : Service() {
         spec: RenderSpec,
         output: File,
     ): List<String>? {
+        if (spec.usesCustomCommand) {
+            // Used verbatim apart from the destination, which the app substitutes so the
+            // result lands somewhere it can then publish.
+            val argv = FfmpegCommandBuilder.withOutput(
+                FfmpegCommandBuilder.parseCommand(spec.customCommand),
+                output.absolutePath,
+            )
+            app.log.message("Using your edited command")
+            return argv.takeIf { it.size > 1 }
+        }
+
         if (manifest.isRenderable) {
             return FfmpegCommandBuilder.fromPattern(manifest, spec, output.absolutePath)
         }
@@ -283,6 +295,7 @@ class RenderService : Service() {
         const val EXTRA_LONG_EDGE = "longEdge"
         const val EXTRA_ARCHIVAL = "archival"
         const val EXTRA_DEFLICKER = "deflicker"
+        const val EXTRA_COMMAND = "command"
 
         private const val CHANNEL_ID = "render"
         private const val NOTIFICATION_ID = 2
@@ -298,6 +311,7 @@ class RenderService : Service() {
                 .putExtra(EXTRA_LONG_EDGE, spec.longEdgePx)
                 .putExtra(EXTRA_ARCHIVAL, spec.encoder == Encoder.X264)
                 .putExtra(EXTRA_DEFLICKER, spec.deflicker)
+                .putExtra(EXTRA_COMMAND, spec.customCommand)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
