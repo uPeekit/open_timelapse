@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import org.peekit.opentimelapse.TimelapseApp
+import org.peekit.opentimelapse.accessibility.AccessibilityBridge
 import org.peekit.opentimelapse.accessibility.TimelapseAccessibilityService
 import org.peekit.opentimelapse.core.model.CycleMode
 import org.peekit.opentimelapse.core.model.TimelapseConfig
@@ -39,7 +40,12 @@ object SetupChecks {
         checks += SetupCheck(
             title = "Accessibility service",
             satisfied = isAccessibilityEnabled(context),
-            detail = "Lets the app tap the shutter and unlock the screen. Nothing works without it.",
+            detail = if (AccessibilityBridge.isConnected) {
+                "Connected."
+            } else {
+                "Lets the app tap the shutter and unlock the screen. Nothing works without it. " +
+                    "Android switches it off after an app update or a crash, so check here first."
+            },
             fix = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
         )
 
@@ -73,8 +79,11 @@ object SetupChecks {
             title = "Ignore battery optimisation",
             satisfied = context.getSystemService(PowerManager::class.java)
                 ?.isIgnoringBatteryOptimizations(context.packageName) == true,
-            detail = "Without it, long sessions can be frozen between frames.",
-            fix = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+            detail = "Without it, long sessions can be frozen between frames. On Samsung " +
+                "this may also need Battery > Unrestricted in the app's own settings.",
+            // The targeted dialog, not the global list: Samsung's list does not obviously
+            // lead to the per-app switch that actually matters.
+            fix = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri(context)),
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -115,13 +124,30 @@ object SetupChecks {
     fun blocking(checks: List<SetupCheck>): List<SetupCheck> =
         checks.filter { it.required && !it.satisfied }
 
+    /**
+     * Whether the service is genuinely running.
+     *
+     * The bridge is the authority: the service registers itself there when the system binds
+     * it. Reading the settings string alone was wrong and actively harmful - a device with
+     * our service listed but the master accessibility toggle off reported green while every
+     * frame failed with "accessibility service is not connected".
+     */
     private fun isAccessibilityEnabled(context: Context): Boolean {
-        val expected = "${context.packageName}/${TimelapseAccessibilityService::class.java.name}"
-        val enabled = Settings.Secure.getString(
+        if (AccessibilityBridge.isConnected) return true
+
+        val listed = Settings.Secure.getString(
             context.contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
         ).orEmpty()
-        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
+            .split(':')
+            .any { it.equals("${context.packageName}/${TimelapseAccessibilityService::class.java.name}", true) }
+        val masterSwitchOn = Settings.Secure.getInt(
+            context.contentResolver,
+            Settings.Secure.ACCESSIBILITY_ENABLED,
+            0,
+        ) == 1
+
+        return listed && masterSwitchOn
     }
 
     private fun hasMediaRead(context: Context): Boolean {

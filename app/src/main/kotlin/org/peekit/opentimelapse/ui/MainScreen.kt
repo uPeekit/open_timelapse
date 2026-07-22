@@ -169,6 +169,11 @@ private fun ControlsSection(canStart: Boolean, actions: MainActions) {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            Text(
+                "Start opens your camera and waits, so you can pick the mode - Pro, RAW, " +
+                    "Night, whatever. The app never changes it; it just presses the shutter.",
+                style = MaterialTheme.typography.bodySmall,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = actions.onStart, enabled = canStart) { Text("Start") }
                 OutlinedButton(onClick = actions.onStop) { Text("Stop") }
@@ -188,6 +193,18 @@ private fun SettingsSection(
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Settings", style = MaterialTheme.typography.titleMedium)
+
+            OutlinedTextField(
+                value = config.session.startDelaySeconds.toString(),
+                onValueChange = { typed ->
+                    typed.toIntOrNull()?.let { seconds ->
+                        onChange { it.copy(session = it.session.copy(startDelaySeconds = seconds.coerceIn(0, 600))) }
+                    }
+                },
+                label = { Text("Seconds to set up the camera before the first frame") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
 
             val minimum = config.calibration.minIntervalSeconds
             val tooShort = minimum > 0 && config.intervalSeconds < minimum

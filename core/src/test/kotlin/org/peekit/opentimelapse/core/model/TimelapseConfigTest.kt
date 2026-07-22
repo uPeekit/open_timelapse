@@ -43,7 +43,7 @@ class TimelapseConfigTest {
             mode = CycleMode.AWAKE,
             intervalSeconds = 45,
             naming = NamingConfig(enabled = true, prefix = "sunset", padWidth = 6, startIndex = 10),
-            session = SessionConfig(EndMode.AT_TIME, endAtEpochMs = 1_800_000_000_000L),
+            session = SessionConfig(endMode = EndMode.AT_TIME, endAtEpochMs = 1_800_000_000_000L),
         )
 
         val decoded = json.decodeFromString<TimelapseConfig>(json.encodeToString(original))

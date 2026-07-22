@@ -52,6 +52,10 @@ class TimelapseService : Service() {
     private var engine: TimelapseEngine? = null
     private var framesCaptured = 0
 
+    /** Kept so the mandatory startForeground() at the top of onStartCommand says something true. */
+    @Volatile
+    private var notificationStatus = "Idle"
+
     /** The snapshot the engine reads at the start of each cycle. */
     @Volatile
     private var liveConfig: TimelapseConfig = TimelapseConfig()
@@ -68,6 +72,11 @@ class TimelapseService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Unconditionally, and before anything else. startForegroundService() requires
+        // startForeground() within a few seconds or the system kills the process - which it
+        // did on every Stop, because that path went straight to stopSelf().
+        goForeground(notificationStatus, framesCaptured)
+
         when (intent?.action) {
             ACTION_STOP -> stop()
             ACTION_SINGLE_CYCLE -> launchSession(singleCycle = true)
@@ -81,7 +90,8 @@ class TimelapseService : Service() {
         if (sessionJob?.isActive == true) return
 
         framesCaptured = 0
-        goForeground(if (singleCycle) "Single cycle" else "Starting...", 0)
+        notificationStatus = if (singleCycle) "Single cycle" else "Starting..."
+        goForeground(notificationStatus, 0)
         wakeLock.acquire()
         app.log.clear()
 
@@ -118,6 +128,16 @@ class TimelapseService : Service() {
                         else "Single cycle failed at ${outcome.failedStep}: ${outcome.detail}"
                     )
                 } else {
+                    // The camera is raised first and the first frame held back, so the mode
+                    // (Pro, RAW, Night) can still be chosen. The app never changes the mode -
+                    // it resumes whatever the camera was left in - so the user has to get
+                    // there before shooting starts.
+                    val grace = liveConfig.session.startDelaySeconds
+                    if (grace > 0) {
+                        app.actuator.launchCamera(liveConfig.shutter.packageName)
+                        report("Camera open - set the mode you want. First frame in ${grace}s.")
+                        waiter.sleep(grace * 1000L)
+                    }
                     val summary = timelapseEngine.runSession(manifest?.id ?: sessionId()) { liveConfig }
                     report("Finished (${summary.stopReason}): ${summary.framesCaptured} frames")
                 }
@@ -144,7 +164,8 @@ class TimelapseService : Service() {
         if (sessionJob?.isActive == true) return
 
         framesCaptured = 0
-        goForeground("Calibrating...", 0)
+        notificationStatus = "Calibrating..."
+        goForeground(notificationStatus, 0)
         wakeLock.acquire()
         app.log.clear()
 
@@ -292,6 +313,7 @@ class TimelapseService : Service() {
     }
 
     private fun stop() {
+        notificationStatus = "Stopping..."
         engine?.requestStop()
         sessionJob?.cancel()
         stopSelfSafely()

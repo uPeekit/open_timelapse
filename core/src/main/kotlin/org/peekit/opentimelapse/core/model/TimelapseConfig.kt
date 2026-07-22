@@ -141,6 +141,12 @@ data class NamingConfig(
 
 @Serializable
 data class SessionConfig(
+    /**
+     * Grace period before the first frame, so the camera can be set to the wanted mode
+     * after pressing Start. The app resumes whatever mode the camera was left in - it never
+     * changes it - so Pro, RAW or Night all work, but only if the user gets to choose.
+     */
+    val startDelaySeconds: Int = 20,
     val endMode: EndMode = EndMode.MANUAL,
     val durationMinutes: Int = 60,
     val endAtEpochMs: Long = 0L,

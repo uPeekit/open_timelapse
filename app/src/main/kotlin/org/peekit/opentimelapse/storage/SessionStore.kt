@@ -98,8 +98,22 @@ class SessionStore(
         if (!file.isFile) null
         else runCatching { json.decodeFromString<SessionManifest>(file.readText()) }.getOrNull()
 
+    /**
+     * Forgets a session.
+     *
+     * Both manifests must go: deleting only the private copy left the one beside the frames,
+     * which recovery then restored on the next refresh - the row simply reappeared.
+     *
+     * The frames themselves are never touched. They are the user's photos, and an app that
+     * quietly deletes a folder of images because a list row was dismissed would be wrong.
+     */
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         runCatching { File(privateDir, "$id.json").delete() }
+
+        val folder = folderFor(id)
+        runCatching { File(folder, MANIFEST_NAME).delete() }
+        // Remove the folder only when nothing of the user's is left in it.
+        runCatching { if (folder.isDirectory && folder.list().isNullOrEmpty()) folder.delete() }
         Unit
     }
 

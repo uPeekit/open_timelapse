@@ -57,7 +57,11 @@ class TimelapseEngineTest {
         mode = mode,
         intervalSeconds = intervalSeconds,
         naming = NamingConfig(enabled = true, prefix = "shot", startIndex = 1),
-        session = SessionConfig(endMode, durationMinutes, endAtEpochMs),
+        session = SessionConfig(
+            endMode = endMode,
+            durationMinutes = durationMinutes,
+            endAtEpochMs = endAtEpochMs,
+        ),
     )
 
     @Test
