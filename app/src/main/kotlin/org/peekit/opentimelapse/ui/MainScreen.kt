@@ -38,6 +38,8 @@ data class MainActions(
     val onConfigChange: ((TimelapseConfig) -> TimelapseConfig) -> Unit,
     val sessionActions: SessionActions,
     val onOpenLicenses: () -> Unit,
+    val onCalibrate: () -> Unit,
+    val onDeclineCalibration: () -> Unit,
 )
 
 @Composable
@@ -59,6 +61,7 @@ fun MainScreen(
     ) {
         Text("OpenTimelapse", style = MaterialTheme.typography.headlineSmall)
 
+        CalibrationSection(config, actions)
         SetupSection(checks, actions.onFix)
         ControlsSection(blocking.isEmpty(), actions)
         SettingsSection(config, actions.onConfigChange)
@@ -67,6 +70,61 @@ fun MainScreen(
 
         androidx.compose.material3.TextButton(onClick = actions.onOpenLicenses) {
             Text("Open source licences")
+        }
+    }
+}
+
+/**
+ * Offered before the first run rather than done silently: it shoots a few real frames,
+ * which takes about a minute and is a surprise if the user is trying to catch something
+ * happening right now.
+ */
+@Composable
+private fun CalibrationSection(config: TimelapseConfig, actions: MainActions) {
+    val state = config.calibration
+    val stale = state.completed && state.cameraPackage != config.shutter.packageName
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Calibration", style = MaterialTheme.typography.titleMedium)
+
+            when {
+                stale -> {
+                    Text(
+                        "Calibrated for a different camera app. Timings do not carry over - " +
+                            "run it again for ${config.shutter.packageName}.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Button(onClick = actions.onCalibrate) { Text("Calibrate again") }
+                }
+
+                state.completed -> Text(
+                    "Done. Shortest safe interval on this phone: ${state.minIntervalSeconds}s.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+
+                else -> {
+                    Text(
+                        "Every phone is different - how long the screen takes to accept a tap, " +
+                            "how long the camera takes to save a photo. Calibration measures " +
+                            "yours by shooting a few frames. It takes about a minute and the " +
+                            "photos are left in your camera roll.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (state.declined) {
+                        Text(
+                            "Skipped - the defaults may drop frames on this device.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = actions.onCalibrate) { Text("Calibrate now") }
+                        if (!state.declined) {
+                            OutlinedButton(onClick = actions.onDeclineCalibration) { Text("Later") }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -131,6 +189,9 @@ private fun SettingsSection(
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Settings", style = MaterialTheme.typography.titleMedium)
 
+            val minimum = config.calibration.minIntervalSeconds
+            val tooShort = minimum > 0 && config.intervalSeconds < minimum
+
             OutlinedTextField(
                 value = config.intervalSeconds.toString(),
                 onValueChange = { typed ->
@@ -139,6 +200,14 @@ private fun SettingsSection(
                     }
                 },
                 label = { Text("Seconds between frames") },
+                isError = tooShort,
+                supportingText = {
+                    if (tooShort) {
+                        // A cycle that overruns its slot drops the frame outright, so this
+                        // is a guarantee of loss rather than a matter of taste.
+                        Text("A cycle takes about ${minimum}s on this phone. Below that, frames will be dropped.")
+                    }
+                },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )

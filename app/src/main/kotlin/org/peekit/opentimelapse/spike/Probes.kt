@@ -37,6 +37,7 @@ object Probes {
             "start" -> TimelapseService.send(context, TimelapseService.ACTION_START)
             "stop" -> TimelapseService.send(context, TimelapseService.ACTION_STOP)
             "cycle" -> TimelapseService.send(context, TimelapseService.ACTION_SINGLE_CYCLE)
+            "calibrate" -> TimelapseService.send(context, TimelapseService.ACTION_CALIBRATE)
             "config" -> configure(context, params)
             "sessions" -> listSessions(context)
             "export" -> exportLatest(context)

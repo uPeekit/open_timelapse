@@ -64,6 +64,16 @@ class MainActivity : ComponentActivity() {
                                 lifecycleScope.launch { app.configRepository.update(transform) }
                             },
                             sessionActions = sessionActions(),
+                            onCalibrate = {
+                                TimelapseService.send(this, TimelapseService.ACTION_CALIBRATE)
+                            },
+                            onDeclineCalibration = {
+                                lifecycleScope.launch {
+                                    app.configRepository.update {
+                                        it.copy(calibration = it.calibration.copy(declined = true))
+                                    }
+                                }
+                            },
                             onOpenLicenses = {
                                 startActivity(Intent(this@MainActivity, org.peekit.opentimelapse.ui.LicensesActivity::class.java))
                             },

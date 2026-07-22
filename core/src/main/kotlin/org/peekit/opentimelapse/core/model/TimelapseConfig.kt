@@ -19,6 +19,7 @@ data class TimelapseConfig(
     val capture: CaptureConfig = CaptureConfig(),
     val naming: NamingConfig = NamingConfig(),
     val session: SessionConfig = SessionConfig(),
+    val calibration: CalibrationState = CalibrationState(),
 ) {
     /**
      * Resolves combinations that are individually valid but jointly meaningless.
@@ -146,3 +147,23 @@ data class SessionConfig(
 )
 
 enum class EndMode { MANUAL, AFTER_DURATION, AT_TIME }
+
+/**
+ * What calibration learned about this device.
+ *
+ * Timings vary enough between phones to lose most of a timelapse - a 12s interval against
+ * a ~10s cycle dropped four frames in six on one device - so they are measured rather than
+ * guessed, and [minIntervalSeconds] is what stops the user configuring a guaranteed loss.
+ */
+@Serializable
+data class CalibrationState(
+    val completed: Boolean = false,
+    val declined: Boolean = false,
+    val atMs: Long = 0L,
+    /** Derived from the slowest measured cycle; 0 until calibration has run. */
+    val minIntervalSeconds: Int = 0,
+    /** Which camera app the measurements belong to; they do not transfer to another. */
+    val cameraPackage: String = "",
+) {
+    fun appliesTo(camera: String): Boolean = completed && cameraPackage == camera
+}

@@ -16,13 +16,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.peekit.opentimelapse.TimelapseApp
 import org.peekit.opentimelapse.core.engine.CapturedMedia
+import org.peekit.opentimelapse.core.engine.CalibrationCalculator
+import org.peekit.opentimelapse.core.engine.CalibrationCollector
+import org.peekit.opentimelapse.core.engine.CycleMeasurement
 import org.peekit.opentimelapse.core.engine.CycleRunner
+import org.peekit.opentimelapse.core.engine.CycleStep
 import org.peekit.opentimelapse.core.engine.EngineEvent
 import org.peekit.opentimelapse.core.engine.EventSink
 import org.peekit.opentimelapse.core.engine.FrameFileResult
 import org.peekit.opentimelapse.core.engine.FrameStore
 import org.peekit.opentimelapse.core.engine.StartRejection
 import org.peekit.opentimelapse.core.engine.TimelapseEngine
+import org.peekit.opentimelapse.core.model.CalibrationState
 import org.peekit.opentimelapse.core.model.SessionManifest
 import org.peekit.opentimelapse.core.model.TimelapseConfig
 import org.peekit.opentimelapse.storage.FileFrameStore
@@ -66,6 +71,7 @@ class TimelapseService : Service() {
         when (intent?.action) {
             ACTION_STOP -> stop()
             ACTION_SINGLE_CYCLE -> launchSession(singleCycle = true)
+            ACTION_CALIBRATE -> launchCalibration()
             else -> launchSession(singleCycle = false)
         }
         return START_NOT_STICKY
@@ -124,6 +130,105 @@ class TimelapseService : Service() {
                 stopSelfSafely()
             }
         }
+    }
+
+    /**
+     * Measures this device by shooting a few real frames and reading the timings off the
+     * engine's own event stream.
+     *
+     * Not a search: only the settle delay between "the screen reports on" and "the screen
+     * accepts touches" is invisible to every API, so only that one is probed - by raising
+     * it and retrying when the unlock fails.
+     */
+    private fun launchCalibration() {
+        if (sessionJob?.isActive == true) return
+
+        framesCaptured = 0
+        goForeground("Calibrating...", 0)
+        wakeLock.acquire()
+        app.log.clear()
+
+        val waiter = AlarmWaiter(this, wakeLock)
+
+        sessionJob = scope.launch {
+            try {
+                liveConfig = app.configRepository.current()
+                if (!ensureCameraResolved()) return@launch
+
+                val collector = CalibrationCollector(statusReportingSink())
+                val runner = CycleRunner(app.actuator, NoOpFrameStore, app.clock, waiter, collector)
+
+                var settle = liveConfig.delays.afterWakeMs
+                var attempt = 0
+                var captures = 0
+                app.log.message("Calibrating on ${liveConfig.shutter.packageName} - this takes about a minute")
+
+                // Counts successful captures, not attempts: a cold camera commonly loses the
+                // first cycle, and calibrating off a single sample is worse than waiting.
+                while (captures < CALIBRATION_CAPTURES && attempt < CALIBRATION_MAX_ATTEMPTS) {
+                    val probe = liveConfig.copy(
+                        delays = liveConfig.delays.copy(afterWakeMs = settle),
+                        naming = liveConfig.naming.copy(enabled = false),
+                    )
+                    val outcome = runner.run(probe.normalized(), frameIndex = 1)
+                    attempt++
+                    collector.endCycle(app.clock.nowMs(), outcome.captured)
+                    if (outcome.captured) captures++
+
+                    if (!outcome.captured && outcome.failedStep == CycleStep.UNLOCK) {
+                        // The one value that cannot be measured: raise it and try again.
+                        val next = CalibrationCalculator.nextWakeSettleMs(settle)
+                        if (next == null) {
+                            report("Could not unlock this device - check the lock screen is set to Swipe")
+                            return@launch
+                        }
+                        app.log.message("Unlock needed more settle time; trying ${next}ms")
+                        settle = next
+                        continue
+                    }
+                    if (outcome.fatal) {
+                        report("Calibration stopped: ${outcome.detail}")
+                        return@launch
+                    }
+                }
+
+                applyCalibration(collector.measurements, settle)
+            } finally {
+                withContext(NonCancellable) { closeSession() }
+                stopSelfSafely()
+            }
+        }
+    }
+
+    private suspend fun applyCalibration(runs: List<CycleMeasurement>, settleMs: Long) {
+        val usable = runs.filter { it.captured }
+        if (usable.isEmpty()) {
+            report("Calibration could not capture a frame; leaving the defaults alone")
+            return
+        }
+
+        val minInterval = CalibrationCalculator.minimumIntervalSeconds(usable)
+        app.configRepository.update { stored ->
+            CalibrationCalculator.deriveConfig(stored, usable).let { tuned ->
+                tuned.copy(
+                    delays = tuned.delays.copy(afterWakeMs = settleMs),
+                    intervalSeconds = tuned.intervalSeconds.coerceAtLeast(minInterval),
+                    calibration = CalibrationState(
+                        completed = true,
+                        atMs = System.currentTimeMillis(),
+                        minIntervalSeconds = minInterval,
+                        cameraPackage = stored.shutter.packageName,
+                    ),
+                )
+            }
+        }
+
+        val tuned = app.configRepository.current()
+        report(
+            "Calibrated: shortest safe interval ${minInterval}s, " +
+                "capture wait ${tuned.capture.captureTimeoutMs / 1000}s, " +
+                "settle ${tuned.delays.afterWakeMs}ms"
+        )
     }
 
     /**
@@ -273,6 +378,11 @@ class TimelapseService : Service() {
         const val ACTION_START = "org.peekit.opentimelapse.START"
         const val ACTION_STOP = "org.peekit.opentimelapse.STOP"
         const val ACTION_SINGLE_CYCLE = "org.peekit.opentimelapse.SINGLE_CYCLE"
+        const val ACTION_CALIBRATE = "org.peekit.opentimelapse.CALIBRATE"
+
+        /** Enough successful runs to see variance without making the user wait. */
+        private const val CALIBRATION_CAPTURES = 3
+        private const val CALIBRATION_MAX_ATTEMPTS = 6
 
         private const val MANIFEST_FLUSH_EVERY = 5
 
