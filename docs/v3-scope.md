@@ -24,7 +24,37 @@ Anything the long run reveals is fixed here, not deferred into v3.
 
 ---
 
-## 1. Incremental encoding — video ready when you press Stop
+## 1. Start trigger: the first manual shot begins the timelapse
+
+**What.** Instead of a countdown, Start opens the camera and then waits. The user sets the
+mode, frames the shot, and **takes one photo by hand**. The app sees that photo appear, keeps
+it as frame 1, and schedules everything from that moment.
+
+**Why it is better than a timer.** A countdown is a guess about how long setup takes: too
+short and it starts before Pro mode is dialled in, too long and the user waits for nothing.
+A manual shot has no wrong answer - it happens exactly when the user is ready, and the first
+frame is one they composed rather than whatever the camera was pointing at when a clock ran
+out.
+
+**Cost: almost nothing.** `MediaStoreWatcher.awaitNewMedia` already does exactly this
+detection, and it is how every frame is confirmed. The trigger is the same call with a long
+timeout.
+
+**Design**
+
+```kotlin
+enum class StartTrigger { TIMER, FIRST_MANUAL_SHOT }
+```
+
+- `FIRST_MANUAL_SHOT` becomes the default; `TIMER` stays for unattended restarts.
+- Timeout of a few minutes, after which the session gives up rather than waiting forever.
+- The notification says "waiting for your first photo", so a phone left on a windowsill does
+  not look broken.
+- Interacts with renaming: the manual frame is frame 1 and gets renamed like any other.
+
+---
+
+## 2. Incremental encoding — video ready when you press Stop
 
 **What.** Optionally build the mp4 *during* the shoot instead of rendering afterwards.
 
@@ -58,7 +88,7 @@ Off by default — the safe path stays the default path.
 
 ---
 
-## 2. Local network control — monitor and control an unattended phone
+## 3. Local network control — monitor and control an unattended phone
 
 **What.** A small HTTP server in the existing foreground service, so a phone on a windowsill
 can be checked from a laptop.
@@ -99,7 +129,7 @@ hand-rolled; decide when writing it.
 
 ---
 
-## 3. Explicitly deferred — Camera2 capture backend
+## 4. Explicitly deferred — Camera2 capture backend
 
 A second backend using Camera2/CameraX would allow **background capture with no camera app
 on screen**, which is how TimeLapseCam works.
@@ -113,23 +143,47 @@ Worth revisiting only if unattended-with-screen-on turns out to be a practical p
 
 ---
 
-## 4. Not yet specified — charging control and sync
+## 5. Charging control
 
-Smart-charger webhooks ("stop at 80%, resume at 40%") and photo sync, from the existing
-MacroDroid setup. Battery is the binding constraint on multi-hour shoots, so this is
-promising and connects to the stop-conditions work above.
+**The problem being replaced.** MacroDroid watched the battery, called an IFTTT webhook,
+which called SmartLife, which switched a socket. Three apps, and IFTTT's free tier allowed
+only enough applets for one socket - which does not scale to several phones.
 
-**Blocked on a conversation**, not on code.
+**What the app should do: nothing clever.** Emit a webhook when the battery crosses a
+threshold, with a user-configured URL, method and body. That is a small feature which works
+with whatever the user already runs, and keeps the orchestration out of a timelapse app.
+
+```
+Battery ≤ 40%  →  POST <url>   (start charging)
+Battery ≥ 80%  →  POST <url>   (stop charging)
+```
+
+**Recommended orchestrator: Home Assistant.** Unlimited automations, no per-applet cap, and
+Tuya/SmartLife sockets work through the Tuya integration or LocalTuya - the latter entirely
+on the LAN, so a socket keeps switching even when the internet is down. One system for many
+phones, replacing all three apps. Node-RED works equally well for anyone already running it.
+
+Keeping IFTTT is possible - the webhook URL is just a different string - but the free-tier
+cap is exactly the limitation being escaped.
+
+**Also worth doing in-app, with no network at all:** a battery-floor stop condition. The app
+already knows the level, and stopping a session at 15% rather than shooting until the phone
+dies is useful on its own. This was in the original design and never built.
+
+**Why the 40-80% band is the right instinct:** holding a lithium cell at 100% while it sits
+on a charger for days is what wears it out. A phone that lives on a windowsill shooting
+timelapses is exactly the case where this matters.
 
 ---
 
 ## Order of work
 
 1. Long-run test → fix whatever it finds → stop conditions in Settings → **0.2.x**
-2. Doze spike for a long-lived ffmpeg process
-3. Incremental encoding, if the spike passes
-4. Local network control
-5. Charging control, once specified
+2. Start trigger on first manual shot - small, and removes a guess from the flow
+3. Doze spike for a long-lived ffmpeg process
+4. Incremental encoding, if the spike passes
+5. Local network control
+6. Charging webhooks + battery-floor stop condition, sharing the network work above
 
 Sizing is deliberately absent: the doze spike and the long-run test can both change the
 plan, and estimating past them would be guessing.

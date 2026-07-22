@@ -114,8 +114,8 @@ class RenderService : Service() {
 
         when (result) {
             is RenderResult.Success -> {
-                publish(output)
-                finish("Rendered ${output.name} in ${result.elapsedMs / 1000}s")
+                val location = publish(output)
+                finish("Rendered to $location in ${result.elapsedMs / 1000}s")
             }
 
             is RenderResult.Failure -> {
@@ -144,24 +144,72 @@ class RenderService : Service() {
     }
 
     /**
-     * Written to app-specific external storage, which never needs a permission, then
-     * published to MediaStore so it appears in the gallery like any other video.
+     * Where the finished video goes.
+     *
+     * Movies/OpenTimelapse when All-files access allows it, so the video lands somewhere
+     * the gallery and a file manager can actually reach. App-specific external storage was
+     * the previous choice and was effectively a black hole: Android 11+ hides
+     * Android/data from file managers and MediaStore will not index it, so renders
+     * reported success and then could not be found.
      */
     private fun outputFile(manifest: SessionManifest): File {
-        val folder = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
-        if (!folder.exists()) folder.mkdirs()
-        return File(folder, "${manifest.name}.mp4")
+        if (app.storage.canRenameForeignFiles()) {
+            val public = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
+                "OpenTimelapse",
+            )
+            if (public.isDirectory || public.mkdirs()) return File(public, "${manifest.name}.mp4")
+        }
+        // Fallback: render privately, then copy into MediaStore so it is still reachable.
+        val fallback = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
+        if (!fallback.exists()) fallback.mkdirs()
+        return File(fallback, "${manifest.name}.mp4")
     }
 
-    private fun publish(output: File) {
-        runCatching {
-            android.media.MediaScannerConnection.scanFile(
-                this,
-                arrayOf(output.absolutePath),
-                arrayOf("video/mp4"),
-                null,
-            )
+    /**
+     * Makes the video visible.
+     *
+     * A file written directly to Movies/ only needs a scan. One left in app-specific
+     * storage has to be copied into MediaStore, because nothing else can see it.
+     */
+    private fun publish(output: File): String {
+        val isPrivate = output.absolutePath.contains("/Android/data/")
+        if (!isPrivate) {
+            runCatching {
+                android.media.MediaScannerConnection.scanFile(
+                    this,
+                    arrayOf(output.absolutePath),
+                    arrayOf("video/mp4"),
+                    null,
+                )
+            }
+            return output.absolutePath
         }
+
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, output.name)
+            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(
+                    android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                    "${Environment.DIRECTORY_MOVIES}/OpenTimelapse",
+                )
+            }
+        }
+        val uri = runCatching {
+            contentResolver.insert(
+                android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                values,
+            )
+        }.getOrNull() ?: return output.absolutePath
+
+        return runCatching {
+            contentResolver.openOutputStream(uri)?.use { sink ->
+                output.inputStream().use { source -> source.copyTo(sink) }
+            }
+            output.delete()
+            "Movies/OpenTimelapse/${output.name}"
+        }.getOrDefault(output.absolutePath)
     }
 
     private fun isCharging(): Boolean =
