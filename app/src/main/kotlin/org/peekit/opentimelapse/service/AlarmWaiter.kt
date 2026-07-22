@@ -97,8 +97,24 @@ class AlarmWaiter(
         }
 
         runCatching {
-            // setExactAndAllowWhileIdle is the only variant that fires on time in doze.
-            alarms?.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, epochMs, pending)
+            // setAlarmClock, not setExactAndAllowWhileIdle.
+            //
+            // Measured on ColorOS: setExactAndAllowWhileIdle was granted as exact
+            // (exactAllowReason=policy_permission) and still handed a 1m47s window, because
+            // the app-standby bucket defers it - something the battery-optimisation
+            // exemption does not cover. At a 150s interval that produced frames in pairs:
+            // an alarm ~100s late, then the following slot already due.
+            //
+            // setAlarmClock is the one kind the system will not defer, at the cost of an
+            // alarm icon in the status bar. A timelapse genuinely is a user-scheduled,
+            // time-critical event, so that is an honest use of it rather than a loophole.
+            val show = PendingIntent.getActivity(
+                context,
+                0,
+                Intent(context, org.peekit.opentimelapse.MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            alarms?.setAlarmClock(AlarmManager.AlarmClockInfo(epochMs, show), pending)
         }.onFailure {
             runCatching { context.unregisterReceiver(receiver) }
             if (continuation.isActive) continuation.resume(Unit)
