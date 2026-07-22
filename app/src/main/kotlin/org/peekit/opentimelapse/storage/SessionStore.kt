@@ -69,14 +69,34 @@ class SessionStore(
         Unit
     }
 
+    /**
+     * Sessions from app storage, plus any found beside their frames.
+     *
+     * The second source matters because uninstalling wipes app-private storage: without it
+     * a reinstall - switching from a GitHub build to an F-Droid one, say - would leave the
+     * photos on disk but orphaned, with nothing able to recognise them as sessions again.
+     * The copy written next to the frames is what makes a reinstall lossless.
+     */
     suspend fun loadAll(): List<SessionManifest> = withContext(Dispatchers.IO) {
-        privateDir.listFiles().orEmpty()
+        val private = privateDir.listFiles().orEmpty()
             .filter { it.isFile && it.extension == "json" }
-            .mapNotNull { file ->
-                runCatching { json.decodeFromString<SessionManifest>(file.readText()) }.getOrNull()
-            }
+            .mapNotNull { decode(it) }
+
+        val beside = storage.sessionsRoot().listFiles().orEmpty()
+            .filter { it.isDirectory }
+            .mapNotNull { folder -> decode(File(folder, MANIFEST_NAME)) }
+
+        // App storage wins on conflict - it is flushed during a session, so it is the
+        // fresher copy. associateBy keeps the last entry, hence private comes second.
+        (beside + private)
+            .associateBy { it.id }
+            .values
             .sortedByDescending { it.startedAtMs }
     }
+
+    private fun decode(file: File): SessionManifest? =
+        if (!file.isFile) null
+        else runCatching { json.decodeFromString<SessionManifest>(file.readText()) }.getOrNull()
 
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         runCatching { File(privateDir, "$id.json").delete() }
