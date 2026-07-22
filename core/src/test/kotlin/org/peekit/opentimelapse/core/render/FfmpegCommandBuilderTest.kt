@@ -70,6 +70,24 @@ class FfmpegCommandBuilderTest {
     }
 
     @Test
+    fun `x264 is always given a memory ceiling`() {
+        // Without these, x264 grew past 1.1GB rendering 53 frames and Samsung's low-memory
+        // killer terminated the app mid-render. The defaults must stay bounded.
+        val argv = FfmpegCommandBuilder.fromPattern(renamed, RenderSpec(), "/out.mp4")
+
+        assertTrue(argv.contains("-threads"), "unbounded threads each hold frame buffers")
+        assertTrue(
+            argv[argv.indexOf("-threads") + 1].toInt() in 1..6,
+            "thread cap should stay modest: ${argv[argv.indexOf("-threads") + 1]}",
+        )
+        assertTrue(
+            argv[argv.indexOf("-x264-params") + 1].contains("rc-lookahead="),
+            "lookahead is the single biggest memory lever",
+        )
+        assertEquals("medium", argv[argv.indexOf("-preset") + 1], "slow keeps a ~50 frame lookahead")
+    }
+
+    @Test
     fun `scaling forces an even height, which h264 requires`() {
         val argv = FfmpegCommandBuilder.fromPattern(renamed, RenderSpec(longEdgePx = 1920), "/out.mp4")
         assertEquals("scale=1920:-2:flags=lanczos", argv[argv.indexOf("-vf") + 1])

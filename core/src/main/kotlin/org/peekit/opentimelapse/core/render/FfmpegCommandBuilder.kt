@@ -83,6 +83,10 @@ object FfmpegCommandBuilder {
                 add("-c:v"); add("libx264")
                 add("-crf"); add(spec.crf.toString())
                 add("-preset"); add(spec.preset)
+                // Memory ceiling, not a speed knob: an unbounded x264 grew past 1.1GB on a
+                // 53 frame render and the phone killed the app.
+                add("-threads"); add(spec.threads.coerceAtLeast(1).toString())
+                add("-x264-params"); add("rc-lookahead=${spec.lookahead.coerceAtLeast(1)}")
             }
         }
 
