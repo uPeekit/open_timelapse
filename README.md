@@ -48,15 +48,19 @@ adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 Three APKs are produced — `arm64-v8a`, `armeabi-v7a`, and a `universal` containing both.
 Any phone from the last several years wants **arm64-v8a**.
 
-### After every install
+### The accessibility service
 
-Android **unbinds the accessibility service** whenever the app is replaced, and neither
-Samsung nor ColorOS rebinds it automatically. Re-enable it:
+An **in-place update** (`adb install -r`, or installing a newer APK signed with the same
+key) keeps the service bound - measured on OnePlus updating 0.2 to 0.2.1.
+
+An **uninstall followed by install** does not. Neither Samsung nor ColorOS rebinds it, so
+re-enable it by hand:
 
 > Settings → Accessibility → Installed apps → OpenTimelapse → on
 
-The app's Setup checklist reads live system state, so it will show this red if it is off.
-Everything else can be granted from that checklist.
+Android can also switch it off after a crash. The Setup checklist asks the service itself
+whether it is connected rather than trusting the settings entry, so it shows this red when
+it happens - which is the first thing to check if frames start failing.
 
 Avoid enabling the *accessibility shortcut*: it binds a volume-key hold to **toggle** the
 service, which can switch it off mid-session.
@@ -109,6 +113,10 @@ installed.
    - `app-armeabi-v7a-release.apk` — older 32-bit devices
    - `app-universal-release.apk` — both, ~2 MB larger; use it if you would rather not
      explain ABIs to anyone
+
+**Samsung needs a second battery setting.** The checklist's exemption is necessary but not
+sufficient on One UI: also set Battery → **Unrestricted** in the app's own system settings,
+or long sessions get frozen between frames.
 
 Installing over an existing copy keeps config and sessions, as long as the signing key and
 `applicationId` have not changed.
