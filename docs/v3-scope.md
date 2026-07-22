@@ -8,19 +8,32 @@ half-built pieces of v2. It deliberately does not add a second camera backend.
 
 ---
 
-## 0. Prerequisite — finish v2 first
+## 0. Prerequisite — mostly done
 
-None of the v3 features matter if a long shoot dies at hour two, so this comes first and
-ships as **0.2.x**.
+Shipped in 0.2.1 to 0.2.5, all found by real use rather than by tests:
+
+| Defect | Threshold that hid it |
+|---|---|
+| Stop crashed the app (`startForegroundService` without `startForeground`) | any press |
+| Setup checklist reported accessibility green while it was off | — |
+| Wakelock expired 10 minutes in, frames drifted then stalled | sessions > 10 min |
+| Alarms deferred by app-standby, frames arrived in pairs | intervals > 60 s |
+| Encoder grew past 1.1 GB, low-memory killer took the app | renders ~50 frames |
+
+**Soak result, OnePlus, 0.2.4:** 21 frames at a 150 s interval over 50 minutes, every gap
+within ±1 s, **2 seconds total drift**, screen off. The scheduling paths are sound.
+
+Still outstanding, carried into v3 rather than blocking it:
 
 | Item | Why |
 |---|---|
-| **Long-run test, 4+ hours** | The only real unknown left. Nothing has run beyond ~2 minutes. Measures drift, battery drain, thermal throttling, frame loss. |
-| **Stop conditions in Settings** | `AFTER_DURATION` / `AT_TIME` work in the engine and are unit-tested, but are not exposed — "shoot for 4 hours" is currently impossible. |
-| **Calibrate on OnePlus + OPPO** | Calibration has only ever run on a Galaxy S20. A second platform is where its device-agnostic claims get tested. |
-| **Retire `SpikeLog` from the production path** | `LogRepository` logs through a Phase 0 diagnostic object. Fine for development, wrong as a dependency. |
+| **Stop conditions in Settings** | Work in the engine and are unit-tested, but unreachable — "shoot for 4 hours" is still impossible. |
+| **Multi-hour soak** | 50 minutes is good evidence, not proof. Every defect so far appeared past a threshold, and doze deepens over hours. |
+| **Retire `SpikeLog` from the production path** | `LogRepository` logs through a Phase 0 diagnostic object. |
 
-Anything the long run reveals is fixed here, not deferred into v3.
+**The lesson worth carrying into v3:** every one of those five defects was invisible to a
+test that finished quickly. Each v3 feature below should be asked the same question - what
+threshold hides its failure - before it is called done.
 
 ---
 
@@ -74,14 +87,24 @@ process lifecycle and stderr draining; this adds a long-lived variant with a std
 **The frames remain the source of truth.** If the pipe dies, the session keeps shooting and
 logs it — a lost video is recoverable by rendering afterwards, a lost frame is not.
 
-**Risks, in order of concern**
+**Risks, in order of concern** — reassessed after the 0.2.5 memory finding
 
-1. **A long-lived process across doze.** The CPU sleeps between frames with the wakelock
-   released; the ffmpeg process is suspended and must resume cleanly hours later. **Needs a
-   spike before committing to the design** — this is the one assumption that could sink it.
-2. fps and resolution are fixed when the session starts. Acceptable: the JPEGs survive, so
-   a re-render at different settings is always possible.
-3. A crash leaves a truncated mp4. Harmless, but it must be deleted rather than shown.
+1. **Memory held for hours, not seconds.** A render peaked over 1.1 GB and Samsung's
+   low-memory killer terminated the app; capping preset, threads and lookahead fixed it for
+   a 46 second render. Incremental encoding holds an encoder open for the *entire session*.
+   Even at the capped footprint, several hundred megabytes resident for four hours is a
+   standing invitation to the same killer - and losing the app mid-shoot now costs the
+   frames too, not just the video. **This is now the biggest risk, ahead of doze.**
+2. **A long-lived process across doze.** The CPU sleeps between frames with the wakelock
+   released; the process is suspended and must resume cleanly hours later. Still needs a
+   spike.
+3. fps and resolution are fixed when the session starts. Acceptable: the JPEGs survive.
+4. A crash leaves a truncated mp4. Harmless, but it must be deleted rather than shown.
+
+**Consequence: this drops down the order.** The whole point was to save a render pass, and
+a render now costs 46 seconds. Trading that against a process that could get the app killed
+during a shoot is a poor bargain. Do it only if the spike shows the resident footprint
+staying small between frames.
 
 **Config.** `capture.buildVideoWhileShooting: Boolean = false`, plus the fps/size to use.
 Off by default — the safe path stays the default path.
