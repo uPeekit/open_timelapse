@@ -18,3 +18,8 @@ tools/ffmpeg-build/
 # off a device (see app/src/main/jniLibs/README.md); the Phase 7 ffmpeg binary will come
 # from tools/build-ffmpeg.sh. Neither belongs in git.
 app/src/main/jniLibs/**/*.so
+
+# Signing credentials and keys - never commit these
+keystore.properties
+*.jks
+*.keystore

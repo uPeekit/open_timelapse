@@ -1,4 +1,12 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
+
+// Signing credentials stay out of git. Copy keystore.properties.example and fill it in;
+// without it, release builds are simply unsigned rather than failing.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use(::load)
+}
 
 plugins {
     alias(libs.plugins.android.application)
@@ -15,8 +23,10 @@ android {
         applicationId = "org.peekit.opentimelapse"
         minSdk = 28
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1-spike"
+        // Bump versionCode for every build you install over an older one; Android refuses
+        // a downgrade. versionName is what humans read.
+        versionCode = 2
+        versionName = "0.2"
     }
 
     compileOptions {
@@ -48,8 +58,31 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val storeFilePath = keystoreProperties.getProperty("storeFile")
+            if (storeFilePath != null) {
+                storeFile = rootProject.file(storeFilePath)
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
+            isMinifyEnabled = false
+        }
+
+        release {
+            // Signed only when keystore.properties is present, so a fresh clone still builds.
+            if (keystoreProperties.getProperty("storeFile") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            // Left off deliberately: the accessibility service and the config classes are
+            // reflected over by the system and by kotlinx.serialization, and a broken
+            // release is worse than a larger APK for a sideloaded personal tool.
             isMinifyEnabled = false
         }
     }
