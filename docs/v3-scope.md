@@ -88,6 +88,32 @@ Off by default — the safe path stays the default path.
 
 ---
 
+## 2b. Editable ffmpeg command
+
+**What.** Show the generated command, let it be edited, keep the generated one as the
+baseline and offer a reset.
+
+**Why.** The whole reason ffmpeg was bundled rather than MediaCodec is flexibility, and
+right now every render is whatever `FfmpegCommandBuilder` decided. Deflicker, a different
+CRF, `-vf` chains, two-pass, a crop - all of it is a text edit away and none of it is
+reachable.
+
+**Design**
+
+- Generated command shown in full; the fields (fps, size, quality) keep working and
+  regenerate it, until the text is edited by hand.
+- Once edited, it is used verbatim. A **Reset** returns to generated.
+- The output path is substituted rather than typed, so a render always lands somewhere the
+  app can then publish.
+- Saved per session or as a default template - a command that worked for one shoot is
+  usually the one wanted for the next.
+
+**Risk.** A hand-edited command can fail in ways the app cannot anticipate. That is
+acceptable: ffmpeg's stderr tail is already surfaced on failure, and the frames are never
+touched by a render.
+
+---
+
 ## 3. Local network control — monitor and control an unattended phone
 
 **What.** A small HTTP server in the existing foreground service, so a phone on a windowsill

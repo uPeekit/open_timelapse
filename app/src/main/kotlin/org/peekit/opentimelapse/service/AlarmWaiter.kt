@@ -40,6 +40,9 @@ class AlarmWaiter(
         if (remaining <= 0) return
 
         if (remaining <= SHORT_WAIT_MS || !canScheduleExact()) {
+            // Re-arm before every short wait: this is the path that keeps the CPU up, and
+            // an expired wakelock turns delay() into an unreliable timer.
+            wakeLock.acquire()
             delay(remaining)
             return
         }

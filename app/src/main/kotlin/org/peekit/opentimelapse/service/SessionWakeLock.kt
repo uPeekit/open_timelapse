@@ -19,10 +19,21 @@ class SessionWakeLock(context: Context) {
 
     val isHeld: Boolean get() = lock?.isHeld == true
 
+    /**
+     * Acquires, or re-arms the timeout if already held.
+     *
+     * The re-arming is the point. The lock is bounded so that a crash cannot pin the CPU
+     * awake forever, but it used to be taken once at session start and never refreshed -
+     * so every session quietly lost its wakelock after [MAX_HOLD_MS]. Intervals shorter
+     * than the alarm threshold wait with delay(), which stops being a timer the moment the
+     * CPU is allowed to sleep, and frames started drifting late roughly ten minutes in.
+     *
+     * Call it on every cycle; acquiring an already-held, non-reference-counted lock simply
+     * restarts its timeout.
+     */
     fun acquire() {
         val held = lock ?: return
-        // Bounded so a crash cannot leave the CPU pinned awake forever.
-        if (!held.isHeld) held.acquire(MAX_HOLD_MS)
+        held.acquire(MAX_HOLD_MS)
     }
 
     fun release() {

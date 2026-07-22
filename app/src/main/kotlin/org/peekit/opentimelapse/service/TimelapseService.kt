@@ -75,6 +75,15 @@ class TimelapseService : Service() {
         // Unconditionally, and before anything else. startForegroundService() requires
         // startForeground() within a few seconds or the system kills the process - which it
         // did on every Stop, because that path went straight to stopSelf().
+        //
+        // The status is decided from the action first: posting the previous one showed
+        // "Starting..." when the user pressed Stop, and "Idle" when they pressed it again.
+        notificationStatus = when (intent?.action) {
+            ACTION_STOP -> "Stopping..."
+            ACTION_CALIBRATE -> "Calibrating..."
+            ACTION_SINGLE_CYCLE -> "Single cycle"
+            else -> if (sessionJob?.isActive == true) notificationStatus else "Starting..."
+        }
         goForeground(notificationStatus, framesCaptured)
 
         when (intent?.action) {
@@ -313,7 +322,6 @@ class TimelapseService : Service() {
     }
 
     private fun stop() {
-        notificationStatus = "Stopping..."
         engine?.requestStop()
         sessionJob?.cancel()
         stopSelfSafely()
