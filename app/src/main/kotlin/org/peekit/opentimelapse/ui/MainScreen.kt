@@ -26,6 +26,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.peekit.opentimelapse.core.model.EndMode
+import org.peekit.opentimelapse.core.model.StartTrigger
+import org.peekit.opentimelapse.core.model.StopTime
 import org.peekit.opentimelapse.core.model.CycleMode
 import org.peekit.opentimelapse.core.model.TimelapseConfig
 import org.peekit.opentimelapse.data.LogEntry
@@ -194,17 +197,54 @@ private fun SettingsSection(
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Settings", style = MaterialTheme.typography.titleMedium)
 
-            OutlinedTextField(
-                value = config.session.startDelaySeconds.toString(),
-                onValueChange = { typed ->
-                    typed.toIntOrNull()?.let { seconds ->
-                        onChange { it.copy(session = it.session.copy(startDelaySeconds = seconds.coerceIn(0, 600))) }
-                    }
-                },
-                label = { Text("Seconds to set up the camera before the first frame") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Text("Starting", style = MaterialTheme.typography.titleSmall)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Begin on my first photo")
+                    Text(
+                        if (config.session.startTrigger == StartTrigger.FIRST_MANUAL_SHOT) {
+                            "Set the camera up, take one shot, and that becomes frame 1."
+                        } else {
+                            "Waits a fixed time after Start instead."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = config.session.startTrigger == StartTrigger.FIRST_MANUAL_SHOT,
+                    onCheckedChange = { manual ->
+                        onChange {
+                            it.copy(
+                                session = it.session.copy(
+                                    startTrigger = if (manual) StartTrigger.FIRST_MANUAL_SHOT else StartTrigger.TIMER,
+                                ),
+                            )
+                        }
+                    },
+                )
+            }
+
+            if (config.session.startTrigger == StartTrigger.TIMER) {
+                OutlinedTextField(
+                    value = config.session.startDelaySeconds.toString(),
+                    onValueChange = { typed ->
+                        typed.toIntOrNull()?.let { seconds ->
+                            onChange { it.copy(session = it.session.copy(startDelaySeconds = seconds.coerceIn(0, 600))) }
+                        }
+                    },
+                    label = { Text("Seconds to set up the camera") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            HorizontalDivider()
+            StopConditionSettings(config, onChange)
+            HorizontalDivider()
 
             val minimum = config.calibration.minIntervalSeconds
             val tooShort = minimum > 0 && config.intervalSeconds < minimum
@@ -291,6 +331,81 @@ private fun SettingsSection(
                 )
             }
         }
+    }
+}
+
+/**
+ * When the session ends on its own.
+ *
+ * Worth having rather than relying on Stop: an overnight shoot should not depend on
+ * someone being awake to end it, and a phone left running past sunrise wastes battery and
+ * storage on frames nobody wants.
+ */
+@Composable
+private fun StopConditionSettings(
+    config: TimelapseConfig,
+    onChange: ((TimelapseConfig) -> TimelapseConfig) -> Unit,
+) {
+    Text("Stopping", style = MaterialTheme.typography.titleSmall)
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        EndMode.entries.forEach { mode ->
+            val selected = config.session.endMode == mode
+            val label = when (mode) {
+                EndMode.MANUAL -> "When I stop"
+                EndMode.AFTER_DURATION -> "After a while"
+                EndMode.AT_TIME -> "At a time"
+            }
+            if (selected) {
+                Button(onClick = {}, modifier = Modifier.weight(1f)) { Text(label, maxLines = 2) }
+            } else {
+                OutlinedButton(
+                    onClick = { onChange { it.copy(session = it.session.copy(endMode = mode)) } },
+                    modifier = Modifier.weight(1f),
+                ) { Text(label, maxLines = 2) }
+            }
+        }
+    }
+
+    when (config.session.endMode) {
+        EndMode.AFTER_DURATION -> OutlinedTextField(
+            value = config.session.durationMinutes.toString(),
+            onValueChange = { typed ->
+                typed.toIntOrNull()?.let { minutes ->
+                    onChange { it.copy(session = it.session.copy(durationMinutes = minutes.coerceIn(1, 10_000))) }
+                }
+            },
+            label = { Text("Minutes") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        EndMode.AT_TIME -> {
+            val stored = config.session.endAtEpochMs
+            val (hour, minute) = if (stored > 0) {
+                StopTime.hourAndMinute(stored)
+            } else {
+                6 to 0
+            }
+            OutlinedTextField(
+                value = "%02d:%02d".format(hour, minute),
+                onValueChange = { typed ->
+                    val parts = typed.split(":")
+                    val h = parts.getOrNull(0)?.trim()?.toIntOrNull()
+                    val m = parts.getOrNull(1)?.trim()?.toIntOrNull()
+                    if (h != null && m != null) {
+                        // Stored as an instant: a time already past today means tomorrow.
+                        val at = StopTime.nextOccurrence(h, m, System.currentTimeMillis())
+                        onChange { it.copy(session = it.session.copy(endAtEpochMs = at)) }
+                    }
+                },
+                label = { Text("Stop at (HH:MM)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        EndMode.MANUAL -> Unit
     }
 }
 

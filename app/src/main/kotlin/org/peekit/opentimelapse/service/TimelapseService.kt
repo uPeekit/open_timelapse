@@ -29,6 +29,7 @@ import org.peekit.opentimelapse.core.engine.StartRejection
 import org.peekit.opentimelapse.core.engine.TimelapseEngine
 import org.peekit.opentimelapse.core.model.CalibrationState
 import org.peekit.opentimelapse.core.model.SessionManifest
+import org.peekit.opentimelapse.core.model.StartTrigger
 import org.peekit.opentimelapse.core.model.TimelapseConfig
 import org.peekit.opentimelapse.storage.FileFrameStore
 import java.io.File
@@ -137,17 +138,16 @@ class TimelapseService : Service() {
                         else "Single cycle failed at ${outcome.failedStep}: ${outcome.detail}"
                     )
                 } else {
-                    // The camera is raised first and the first frame held back, so the mode
-                    // (Pro, RAW, Night) can still be chosen. The app never changes the mode -
-                    // it resumes whatever the camera was left in - so the user has to get
-                    // there before shooting starts.
-                    val grace = liveConfig.session.startDelaySeconds
-                    if (grace > 0) {
-                        app.actuator.launchCamera(liveConfig.shutter.packageName)
-                        report("Camera open - set the mode you want. First frame in ${grace}s.")
-                        waiter.sleep(grace * 1000L)
+                    val offset = awaitStart(frameStore, waiter, sink) ?: return@launch
+                    val summary = timelapseEngine.runSession(manifest?.id ?: sessionId()) {
+                        // The manual frame already used the first index, so the schedule
+                        // continues from the next one.
+                        liveConfig.copy(
+                            naming = liveConfig.naming.copy(
+                                startIndex = liveConfig.naming.startIndex + offset,
+                            ),
+                        )
                     }
-                    val summary = timelapseEngine.runSession(manifest?.id ?: sessionId()) { liveConfig }
                     report("Finished (${summary.stopReason}): ${summary.framesCaptured} frames")
                 }
             } finally {
@@ -259,6 +259,57 @@ class TimelapseService : Service() {
                 "capture wait ${tuned.capture.captureTimeoutMs / 1000}s, " +
                 "settle ${tuned.delays.afterWakeMs}ms"
         )
+    }
+
+    /**
+     * Holds the session until the user is actually ready, and returns how many frames were
+     * already taken during that wait.
+     *
+     * The camera is raised but never reconfigured - the app resumes whatever mode it was
+     * left in, which is the whole reason it drives the manufacturer's app rather than
+     * opening its own camera.
+     */
+    private suspend fun awaitStart(
+        frameStore: FrameStore,
+        waiter: AlarmWaiter,
+        sink: EventSink,
+    ): Int? {
+        app.actuator.launchCamera(liveConfig.shutter.packageName)
+
+        if (liveConfig.session.startTrigger == StartTrigger.TIMER) {
+            val grace = liveConfig.session.startDelaySeconds
+            if (grace > 0) {
+                report("Camera open - set the mode you want. First frame in ${grace}s.")
+                waiter.sleep(grace * 1000L)
+            }
+            return 0
+        }
+
+        val timeoutMs = liveConfig.session.manualShotTimeoutMinutes.coerceAtLeast(1) * 60_000L
+        report("Set up your camera, then take one photo - that starts the timelapse.")
+
+        val since = app.clock.nowMs()
+        val media = app.actuator.awaitNewMedia(
+            sinceMs = since,
+            timeoutMs = timeoutMs,
+            quietMs = liveConfig.capture.siblingQuietMs,
+        )
+        if (media.isEmpty()) {
+            report("No photo taken within ${liveConfig.session.manualShotTimeoutMinutes} minutes - stopping.")
+            return null
+        }
+
+        // That photo is frame 1: filed, counted and named like any other.
+        val index = liveConfig.naming.startIndex
+        val filed = frameStore.fileFrame(media, index)
+        val paths = if (filed.ok) filed.paths else media.map { it.path ?: it.uri }
+        sink.emit(EngineEvent.FrameCaptured(app.clock.nowMs(), index, paths))
+
+        report("Started from your photo. Next frame in ${liveConfig.intervalSeconds}s.")
+        // Wait out one interval so the engine's first slot lands on schedule rather than
+        // firing immediately and double-shooting.
+        waiter.sleep(liveConfig.intervalMs)
+        return 1
     }
 
     /**

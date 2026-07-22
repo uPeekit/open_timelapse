@@ -141,18 +141,38 @@ data class NamingConfig(
 
 @Serializable
 data class SessionConfig(
+    val startTrigger: StartTrigger = StartTrigger.FIRST_MANUAL_SHOT,
     /**
-     * Grace period before the first frame, so the camera can be set to the wanted mode
-     * after pressing Start. The app resumes whatever mode the camera was left in - it never
-     * changes it - so Pro, RAW or Night all work, but only if the user gets to choose.
+     * Grace period before the first frame when [StartTrigger.TIMER] is used. The app
+     * resumes whatever mode the camera was left in - it never changes it - so Pro, RAW or
+     * Night all work, but only if the user gets to choose first.
      */
     val startDelaySeconds: Int = 20,
+    /** How long to wait for that first manual photo before giving up. */
+    val manualShotTimeoutMinutes: Int = 10,
     val endMode: EndMode = EndMode.MANUAL,
     val durationMinutes: Int = 60,
     val endAtEpochMs: Long = 0L,
 )
 
 enum class EndMode { MANUAL, AFTER_DURATION, AT_TIME }
+
+/** What begins the interval schedule. */
+enum class StartTrigger {
+    /**
+     * The user takes one photo by hand and that becomes frame 1.
+     *
+     * Better than a countdown because a countdown is a guess at how long setting up takes:
+     * too short and it starts before Pro mode is dialled in, too long and the user waits
+     * for nothing. A manual shot happens exactly when they are ready, and the first frame
+     * is one they framed. Detection is free - it is the same MediaStore wait that confirms
+     * every other frame.
+     */
+    FIRST_MANUAL_SHOT,
+
+    /** Shoot after a fixed grace period. Kept for unattended restarts. */
+    TIMER,
+}
 
 /**
  * What calibration learned about this device.
