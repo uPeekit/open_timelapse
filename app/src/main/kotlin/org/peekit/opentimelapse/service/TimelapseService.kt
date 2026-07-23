@@ -28,6 +28,7 @@ import org.peekit.opentimelapse.core.engine.FrameStore
 import org.peekit.opentimelapse.core.engine.StartRejection
 import org.peekit.opentimelapse.core.engine.TimelapseEngine
 import org.peekit.opentimelapse.core.model.CalibrationState
+import org.peekit.opentimelapse.core.model.CycleMode
 import org.peekit.opentimelapse.core.model.SessionManifest
 import org.peekit.opentimelapse.core.model.StartTrigger
 import org.peekit.opentimelapse.core.model.TimelapseConfig
@@ -318,6 +319,10 @@ class TimelapseService : Service() {
         sink.emit(EngineEvent.FrameCaptured(app.clock.nowMs(), index, paths))
 
         report("Started from your photo. Next frame in ${liveConfig.intervalSeconds}s.")
+        // In lock-cycle mode, lock the moment the manual shot is taken: the screen going dark
+        // is the clearest possible signal that the session has taken over. The engine's own
+        // cycle wakes and unlocks again for the next frame.
+        if (liveConfig.mode == CycleMode.LOCK_CYCLE) app.actuator.lockScreen()
         // Wait out one interval so the engine's first slot lands on schedule rather than
         // firing immediately and double-shooting.
         waiter.sleep(liveConfig.intervalMs)
@@ -331,7 +336,7 @@ class TimelapseService : Service() {
      * exactly as they are, and the manifest just records where the frames went.
      */
     private suspend fun openSession(config: TimelapseConfig): FrameStore {
-        val name = app.sessionStore.newSessionName()
+        val name = app.sessionStore.newSessionName(config)
         val record = app.sessionStore.create(name, config, System.currentTimeMillis())
         manifest = record
         app.sessionStore.save(record)
@@ -445,7 +450,11 @@ class TimelapseService : Service() {
 
     private fun stopSelfSafely() {
         wakeLock.release()
-        stopForeground(STOP_FOREGROUND_DETACH)
+        // REMOVE, not DETACH: detaching left the notification on screen with whatever text it
+        // last had - "Stopping..." after a Stop - and nothing ever updated it again, so it went
+        // stale. Removing it is the honest signal that the session is over; the result is in
+        // the app's session list and the log.
+        stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 

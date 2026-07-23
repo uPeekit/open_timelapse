@@ -65,6 +65,7 @@ class RenderService : Service() {
             return
         }
         goForeground("Preparing...", null)
+        app.renderState.starting(sessionId)
 
         val spec = RenderSpec(
             fps = intent.getIntExtra(EXTRA_FPS, 30),
@@ -106,6 +107,7 @@ class RenderService : Service() {
 
         val result = app.ffmpeg.render(argv) { progress ->
             val percent = progress.percentOf(total)
+            app.renderState.progress(percent, progress.frame)
             notify(
                 if (percent != null) "Rendering ${percent}% (frame ${progress.frame})"
                 else "Rendering frame ${progress.frame}",
@@ -115,18 +117,23 @@ class RenderService : Service() {
 
         when (result) {
             is RenderResult.Success -> {
-                val location = publish(output)
-                finish("Rendered to $location in ${result.elapsedMs / 1000}s")
+                val published = publish(output)
+                app.renderState.success(published.uri, "Rendered ${manifest.name}")
+                finish("Rendered to ${published.location} in ${result.elapsedMs / 1000}s")
             }
 
             is RenderResult.Failure -> {
                 // The output is a truncated file that would only confuse the gallery.
                 runCatching { if (output.exists()) output.delete() }
                 result.log.takeLast(6).forEach { app.log.message("  ffmpeg: $it") }
+                app.renderState.failed("Render failed: ${result.message}")
                 finish("Render failed: ${result.message}")
             }
 
-            RenderResult.Unavailable -> finish("ffmpeg binary is missing from this build")
+            RenderResult.Unavailable -> {
+                app.renderState.failed("ffmpeg binary is missing from this build")
+                finish("ffmpeg binary is missing from this build")
+            }
         }
     }
 
@@ -178,24 +185,21 @@ class RenderService : Service() {
         return File(fallback, "${manifest.name}.mp4")
     }
 
+    /** A published video: where it landed (for the log) and a URI to open it (for "open when rendered"). */
+    private data class Published(val location: String, val uri: String?)
+
     /**
      * Makes the video visible.
      *
      * A file written directly to Movies/ only needs a scan. One left in app-specific
-     * storage has to be copied into MediaStore, because nothing else can see it.
+     * storage has to be copied into MediaStore, because nothing else can see it. Either way
+     * the resulting MediaStore URI is captured, so the app can open the video afterwards.
      */
-    private fun publish(output: File): String {
+    private suspend fun publish(output: File): Published {
         val isPrivate = output.absolutePath.contains("/Android/data/")
         if (!isPrivate) {
-            runCatching {
-                android.media.MediaScannerConnection.scanFile(
-                    this,
-                    arrayOf(output.absolutePath),
-                    arrayOf("video/mp4"),
-                    null,
-                )
-            }
-            return output.absolutePath
+            val uri = scanForUri(output.absolutePath)
+            return Published(output.absolutePath, uri?.toString())
         }
 
         val values = android.content.ContentValues().apply {
@@ -213,16 +217,28 @@ class RenderService : Service() {
                 android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
                 values,
             )
-        }.getOrNull() ?: return output.absolutePath
+        }.getOrNull() ?: return Published(output.absolutePath, null)
 
         return runCatching {
             contentResolver.openOutputStream(uri)?.use { sink ->
                 output.inputStream().use { source -> source.copyTo(sink) }
             }
             output.delete()
-            "Movies/OpenTimelapse/${output.name}"
-        }.getOrDefault(output.absolutePath)
+            Published("Movies/OpenTimelapse/${output.name}", uri.toString())
+        }.getOrDefault(Published(output.absolutePath, uri.toString()))
     }
+
+    /** Scans a file into MediaStore and returns the URI its callback hands back. */
+    private suspend fun scanForUri(path: String): android.net.Uri? =
+        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+            runCatching {
+                android.media.MediaScannerConnection.scanFile(
+                    this,
+                    arrayOf(path),
+                    arrayOf("video/mp4"),
+                ) { _, uri -> if (cont.isActive) cont.resumeWith(Result.success(uri)) }
+            }.onFailure { if (cont.isActive) cont.resumeWith(Result.success(null)) }
+        }
 
     private fun isCharging(): Boolean =
         getSystemService(BatteryManager::class.java)?.isCharging == true
@@ -234,7 +250,10 @@ class RenderService : Service() {
     }
 
     private fun stopSelfSafely() {
-        stopForeground(STOP_FOREGROUND_DETACH)
+        // REMOVE, not DETACH: the render notification is ongoing, so detaching left an
+        // undismissable "Rendered to..." stuck in the shade forever. The result is now shown
+        // in the app (progress, and opening the video), so the notification's job is done.
+        stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
