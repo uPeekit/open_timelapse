@@ -681,6 +681,14 @@ private fun NetworkSection(
                         "preview and stop the shoot.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+
+                // For when a token leaks, or a QR was photographed: a fresh token unpairs
+                // every laptop at once. Only offered when there is a token to replace.
+                OutlinedButton(
+                    onClick = { onChange { it.copy(network = it.network.copy(token = newToken())) } },
+                ) {
+                    Text("Regenerate token")
+                }
             }
         }
     }
