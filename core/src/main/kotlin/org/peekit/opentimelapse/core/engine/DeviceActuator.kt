@@ -40,4 +40,7 @@ interface DeviceActuator {
     suspend fun awaitNewMedia(sinceMs: Long, timeoutMs: Long, quietMs: Long): List<CapturedMedia>
 
     suspend fun lockScreen(): StepResult
+
+    /** Battery level and whether it is on a charger, for the floor and the webhooks. */
+    suspend fun battery(): BatteryReading
 }

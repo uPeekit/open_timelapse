@@ -139,6 +139,11 @@ class FakeActuator(
         return media
     }
 
+    var batteryPercent: Int = 100
+    var batteryCharging: Boolean = true
+
+    override suspend fun battery(): BatteryReading = BatteryReading(batteryPercent, batteryCharging)
+
     override suspend fun lockScreen(): StepResult {
         calls += "lockScreen"
         if (lockResult.ok) {

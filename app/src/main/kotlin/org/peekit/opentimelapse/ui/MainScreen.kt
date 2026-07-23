@@ -20,13 +20,16 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.peekit.opentimelapse.core.engine.ChargingAction
 import org.peekit.opentimelapse.core.model.EndMode
 import org.peekit.opentimelapse.core.model.StartTrigger
 import org.peekit.opentimelapse.core.model.StopTime
@@ -46,6 +49,7 @@ data class MainActions(
     val onOpenLicenses: () -> Unit,
     val onCalibrate: () -> Unit,
     val onDeclineCalibration: () -> Unit,
+    val onTestWebhook: (ChargingAction) -> Unit,
 )
 
 @Composable
@@ -71,6 +75,7 @@ fun MainScreen(
         SetupSection(checks, actions.onFix)
         ControlsSection(blocking.isEmpty(), actions)
         SettingsSection(config, actions.onConfigChange)
+        PowerSection(config, actions.onConfigChange, actions.onTestWebhook)
         SessionsSection(sessions, actions.sessionActions)
         RenderCommandSection(config, actions.onConfigChange)
         LogSection(log)
@@ -233,15 +238,14 @@ private fun SettingsSection(
             }
 
             if (config.session.startTrigger == StartTrigger.TIMER) {
-                OutlinedTextField(
+                BoundTextField(
                     value = config.session.startDelaySeconds.toString(),
                     onValueChange = { typed ->
                         typed.toIntOrNull()?.let { seconds ->
                             onChange { it.copy(session = it.session.copy(startDelaySeconds = seconds.coerceIn(0, 600))) }
                         }
                     },
-                    label = { Text("Seconds to set up the camera") },
-                    singleLine = true,
+                    label = "Seconds to set up the camera",
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -253,23 +257,22 @@ private fun SettingsSection(
             val minimum = config.calibration.minIntervalSeconds
             val tooShort = minimum > 0 && config.intervalSeconds < minimum
 
-            OutlinedTextField(
+            BoundTextField(
                 value = config.intervalSeconds.toString(),
                 onValueChange = { typed ->
                     typed.toIntOrNull()?.let { seconds ->
                         onChange { it.copy(intervalSeconds = seconds.coerceAtLeast(1)) }
                     }
                 },
-                label = { Text("Seconds between frames") },
+                label = "Seconds between frames",
                 isError = tooShort,
-                supportingText = {
-                    if (tooShort) {
-                        // A cycle that overruns its slot drops the frame outright, so this
-                        // is a guarantee of loss rather than a matter of taste.
-                        Text("A cycle takes about ${minimum}s on this phone. Below that, frames will be dropped.")
-                    }
+                // A cycle that overruns its slot drops the frame outright, so this is a
+                // guarantee of loss rather than a matter of taste.
+                supportingText = if (tooShort) {
+                    "A cycle takes about ${minimum}s on this phone. Below that, frames will be dropped."
+                } else {
+                    null
                 },
-                singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -324,13 +327,12 @@ private fun SettingsSection(
             }
 
             if (config.naming.enabled) {
-                OutlinedTextField(
+                BoundTextField(
                     value = config.naming.prefix,
                     onValueChange = { typed ->
                         onChange { it.copy(naming = it.naming.copy(prefix = typed.filter { c -> c.isLetterOrDigit() || c == '_' })) }
                     },
-                    label = { Text("Name prefix") },
-                    singleLine = true,
+                    label = "Name prefix",
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -372,15 +374,14 @@ private fun StopConditionSettings(
     }
 
     when (config.session.endMode) {
-        EndMode.AFTER_DURATION -> OutlinedTextField(
+        EndMode.AFTER_DURATION -> BoundTextField(
             value = config.session.durationMinutes.toString(),
             onValueChange = { typed ->
                 typed.toIntOrNull()?.let { minutes ->
                     onChange { it.copy(session = it.session.copy(durationMinutes = minutes.coerceIn(1, 10_000))) }
                 }
             },
-            label = { Text("Minutes") },
-            singleLine = true,
+            label = "Minutes",
             modifier = Modifier.fillMaxWidth(),
         )
 
@@ -391,7 +392,7 @@ private fun StopConditionSettings(
             } else {
                 6 to 0
             }
-            OutlinedTextField(
+            BoundTextField(
                 value = "%02d:%02d".format(hour, minute),
                 onValueChange = { typed ->
                     val parts = typed.split(":")
@@ -403,13 +404,198 @@ private fun StopConditionSettings(
                         onChange { it.copy(session = it.session.copy(endAtEpochMs = at)) }
                     }
                 },
-                label = { Text("Stop at (HH:MM)") },
-                singleLine = true,
+                label = "Stop at (HH:MM)",
                 modifier = Modifier.fillMaxWidth(),
             )
         }
 
         EndMode.MANUAL -> Unit
+    }
+}
+
+/**
+ * A text field that owns what it shows.
+ *
+ * Binding `value` straight to the config loses keystrokes: each one is written to DataStore
+ * and read back through a flow, so the next keystroke is typed against the previous value
+ * and overwrites it. Measured on a real device at four characters a second -
+ * "http://127.0.0.1:8099/on" arrived as ".nt:2.00:801o".
+ *
+ * So the field keeps its own text and only follows the config until the user first types.
+ * After that it is the source of truth, which is what the user already believes.
+ */
+@Composable
+private fun BoundTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    placeholder: String? = null,
+    supportingText: String? = null,
+    isError: Boolean = false,
+) {
+    var text by remember { mutableStateOf(value) }
+    var edited by remember { mutableStateOf(false) }
+
+    // Config loads asynchronously, so an untouched field must still pick up the stored value.
+    if (!edited && value != text) text = value
+
+    OutlinedTextField(
+        value = text,
+        onValueChange = {
+            edited = true
+            text = it
+            onValueChange(it)
+        },
+        label = { Text(label) },
+        placeholder = placeholder?.let { { Text(it) } },
+        supportingText = supportingText?.let { { Text(it) } },
+        isError = isError,
+        singleLine = true,
+        modifier = modifier,
+    )
+}
+
+/**
+ * Battery floor and charging webhooks.
+ *
+ * A phone that shoots until it dies loses the session and the last frames with it, and a
+ * phone left on the charger for a week-long shoot swells its battery. Both are solved by
+ * the same thing: knowing the charge level and being able to act on it.
+ *
+ * Off by default. It sends a request to a URL the user typed, and nothing else.
+ */
+@Composable
+private fun PowerSection(
+    config: TimelapseConfig,
+    onChange: ((TimelapseConfig) -> TimelapseConfig) -> Unit,
+    onTest: (ChargingAction) -> Unit,
+) {
+    val charging = config.charging
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Power", style = MaterialTheme.typography.titleMedium)
+
+            BoundTextField(
+                value = config.session.stopBelowBatteryPercent.toString(),
+                onValueChange = { typed ->
+                    typed.toIntOrNull()?.let { percent ->
+                        onChange {
+                            it.copy(session = it.session.copy(stopBelowBatteryPercent = percent.coerceIn(0, 95)))
+                        }
+                    }
+                },
+                label = "Stop below battery %",
+                supportingText = "0 to keep shooting until the phone dies. Ignored while charging.",
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            HorizontalDivider()
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Control a smart plug")
+                    Text(
+                        "Calls a URL when the battery gets low or full, so a long shoot can " +
+                            "charge itself without sitting at 100% for days. Only while a " +
+                            "session is running.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = charging.enabled,
+                    onCheckedChange = { on ->
+                        onChange { it.copy(charging = it.charging.copy(enabled = on)) }
+                    },
+                )
+            }
+
+            if (charging.enabled) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BoundTextField(
+                        value = charging.lowPercent.toString(),
+                        onValueChange = { typed ->
+                            typed.toIntOrNull()?.let { percent ->
+                                onChange { it.copy(charging = it.charging.copy(lowPercent = percent.coerceIn(1, 99))) }
+                            }
+                        },
+                        label = "Charge below %",
+                        modifier = Modifier.weight(1f),
+                    )
+                    BoundTextField(
+                        value = charging.highPercent.toString(),
+                        onValueChange = { typed ->
+                            typed.toIntOrNull()?.let { percent ->
+                                onChange { it.copy(charging = it.charging.copy(highPercent = percent.coerceIn(2, 100))) }
+                            }
+                        },
+                        label = "Stop above %",
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                BoundTextField(
+                    value = charging.startChargingUrl,
+                    onValueChange = { typed ->
+                        onChange { it.copy(charging = it.charging.copy(startChargingUrl = typed.trim())) }
+                    },
+                    label = "URL to switch the plug on",
+                    placeholder = "http://192.168.1.50/relay/0?turn=on",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                BoundTextField(
+                    value = charging.stopChargingUrl,
+                    onValueChange = { typed ->
+                        onChange { it.copy(charging = it.charging.copy(stopChargingUrl = typed.trim())) }
+                    },
+                    label = "URL to switch the plug off",
+                    placeholder = "http://192.168.1.50/relay/0?turn=off",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BoundTextField(
+                        value = charging.method,
+                        onValueChange = { typed ->
+                            onChange { it.copy(charging = it.charging.copy(method = typed.uppercase().trim())) }
+                        },
+                        label = "Method",
+                        modifier = Modifier.weight(1f),
+                    )
+                    BoundTextField(
+                        value = charging.body,
+                        onValueChange = { typed ->
+                            onChange { it.copy(charging = it.charging.copy(body = typed)) }
+                        },
+                        label = "Body (optional)",
+                        modifier = Modifier.weight(2f),
+                    )
+                }
+
+                // Testing this against a real battery would mean waiting for it to drain to
+                // 40%, so the buttons fire the request now and report the result in the log.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { onTest(ChargingAction.START_CHARGING) },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Test on") }
+                    OutlinedButton(
+                        onClick = { onTest(ChargingAction.STOP_CHARGING) },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Test off") }
+                }
+                Text(
+                    "Results appear in the log below.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
     }
 }
 

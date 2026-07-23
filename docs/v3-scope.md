@@ -253,12 +253,34 @@ timelapses is exactly the case where this matters.
 
 ## Order of work
 
-1. Long-run test → fix whatever it finds → stop conditions in Settings → **0.2.x**
-2. Start trigger on first manual shot - small, and removes a guess from the flow
-3. Doze spike for a long-lived ffmpeg process
-4. Incremental encoding, if the spike passes
-5. Local network control
-6. Charging webhooks + battery-floor stop condition, sharing the network work above
+1. ~~Long-run test → fix whatever it finds → stop conditions in Settings~~ → **done (0.2.x)**
+2. ~~Start trigger on first manual shot~~ → **done**
+3. ~~Editable ffmpeg command~~ → **done**
+4. ~~Charging webhooks + battery-floor stop condition~~ → **done (0.3.0)** — see below
+5. Doze spike for a long-lived ffmpeg process
+6. Incremental encoding, if the spike passes
+7. Local network control
 
 Sizing is deliberately absent: the doze spike and the long-run test can both change the
 plan, and estimating past them would be guessing.
+
+### Charging webhooks — as built (0.3.0)
+
+Delivered ahead of local network control rather than after it: the webhook is an outbound
+call the phone makes, so it needs none of the server, pairing or token work. Only `INTERNET`.
+
+- **`:core`** — `ChargingThresholds` is the whole policy: edge-triggered so it fires once on
+  a crossing and re-arms only after the opposite threshold, and it reads charge state as well
+  as level so an already-unplugged phone is never told to stop. Pure and unit-tested (8 tests).
+  The battery-floor stop lives in `TimelapseEngine`, checked *before* each frame.
+- **`:app`** — `ChargingWebhooks` registers a battery receiver for the session's lifetime
+  only, and sends via `HttpURLConnection` on the configured method/body. Every failure is
+  logged and swallowed: a socket that did not switch is a nuisance, a stopped session is a
+  lost timelapse. A **Test** button fires one now so a setup is checked without draining a
+  battery to 40%.
+- **Cleartext** is allowed by a narrow `network_security_config` — home smart plugs speak
+  plain `http` at a bare IP and have no certificate. The app makes no other requests.
+- Verified on the OnePlus end-to-end: `START_CHARGING webhook returned 200`, POST reaching
+  the host at the configured path. A field bug was caught and fixed in the process — every
+  Settings text field lost keystrokes because it rendered from the async DataStore round-trip;
+  `BoundTextField` now owns its text after the first edit.

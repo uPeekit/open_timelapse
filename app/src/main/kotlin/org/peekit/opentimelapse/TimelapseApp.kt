@@ -1,12 +1,16 @@
 package org.peekit.opentimelapse
 
 import android.app.Application
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import org.peekit.opentimelapse.actuator.AndroidDeviceActuator
 import org.peekit.opentimelapse.actuator.CameraResolver
 import org.peekit.opentimelapse.core.engine.Clock
 import org.peekit.opentimelapse.data.ConfigRepository
 import org.peekit.opentimelapse.data.LogRepository
 import org.peekit.opentimelapse.render.FfmpegRunner
+import org.peekit.opentimelapse.service.ChargingWebhooks
 import org.peekit.opentimelapse.storage.SessionExporter
 import org.peekit.opentimelapse.storage.SessionStore
 import org.peekit.opentimelapse.storage.StorageAccess
@@ -36,4 +40,13 @@ class TimelapseApp : Application() {
     val sessionExporter by lazy { SessionExporter(this) }
 
     val ffmpeg by lazy { FfmpegRunner(this) }
+
+    /**
+     * Application-scoped so the Settings "Test" button can fire one without a session, and
+     * so an in-flight request is not cancelled by the service shutting down. It only
+     * *watches* the battery between [ChargingWebhooks.start] and `stop`.
+     */
+    val charging by lazy {
+        ChargingWebhooks(this, log, CoroutineScope(SupervisorJob() + Dispatchers.IO))
+    }
 }

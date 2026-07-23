@@ -3,9 +3,12 @@ package org.peekit.opentimelapse.actuator
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import kotlinx.coroutines.delay
 import org.peekit.opentimelapse.accessibility.AccessibilityBridge
 import org.peekit.opentimelapse.accessibility.NodeFinder
+import org.peekit.opentimelapse.core.engine.BatteryReading
 import org.peekit.opentimelapse.core.engine.CapturedMedia
 import org.peekit.opentimelapse.core.engine.DeviceActuator
 import org.peekit.opentimelapse.core.engine.ShutterResult
@@ -115,6 +118,26 @@ class AndroidDeviceActuator(
         timeoutMs: Long,
         quietMs: Long,
     ): List<CapturedMedia> = media.awaitNewMedia(sinceMs, timeoutMs, quietMs)
+
+    override suspend fun battery(): BatteryReading {
+        // The sticky ACTION_BATTERY_CHANGED rather than BatteryManager properties: it is the
+        // one source that carries level and charge status in the same snapshot, so the two
+        // cannot disagree across a plug event.
+        val status = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            // Unreadable battery must not stop a session: report full and on the charger.
+            ?: return BatteryReading(percent = 100, charging = true)
+
+        val level = status.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = status.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+        if (level < 0 || scale <= 0) return BatteryReading(percent = 100, charging = true)
+
+        val plugged = status.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+        return BatteryReading(
+            percent = level * 100 / scale,
+            charging = plugged == BatteryManager.BATTERY_STATUS_CHARGING ||
+                plugged == BatteryManager.BATTERY_STATUS_FULL,
+        )
+    }
 
     override suspend fun lockScreen(): StepResult {
         val service = AccessibilityBridge.service

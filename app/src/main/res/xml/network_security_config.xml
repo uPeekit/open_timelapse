@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Cleartext is off by default from API 28, which would silently break the only network
+    feature this app has: smart plugs and home-automation bridges on a home LAN speak plain
+    http at a bare IP, and none of them have a certificate.
+
+    Kept as narrow as the platform allows - cleartext is permitted, but the app makes no
+    requests of its own. The only URLs it ever opens are the two the user typed into the
+    charging settings.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

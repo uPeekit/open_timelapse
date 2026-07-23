@@ -85,6 +85,23 @@ class TimelapseEngine(
                 break
             }
 
+            // Checked before shooting, not after: the point is to leave charge in the
+            // phone, and a frame taken at the floor defeats that.
+            val floor = config.session.stopBelowBatteryPercent
+            if (floor > 0) {
+                val battery = actuator.battery()
+                if (!battery.charging && battery.percent <= floor) {
+                    events.emit(
+                        EngineEvent.Message(
+                            clock.nowMs(),
+                            "Stopping at ${battery.percent}% to leave the phone some charge",
+                        )
+                    )
+                    reason = StopReason.BATTERY_LOW
+                    break
+                }
+            }
+
             if (clock.nowMs() < slotAtMs) waiter.awaitUntil(slotAtMs)
             if (stopRequested) break
 

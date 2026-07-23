@@ -9,6 +9,9 @@ enum class StopReason {
 
     /** Stopped mid-session by a fault that retrying cannot fix. */
     ABORTED,
+
+    /** Stopped to leave the phone with some charge rather than shooting until it died. */
+    BATTERY_LOW,
 }
 
 /** Why a session could not start. Surfaced in the UI with a fix action, not just logged. */

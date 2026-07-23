@@ -14,6 +14,12 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!--
+        Only for charging webhooks, which are off by default: the app calls a URL the user
+        typed in, on their own network, and nothing else. No analytics, no phoning home.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Capture confirmation reads back the file the camera app wrote. -->
     <uses-permission
         android:name="android.permission.READ_MEDIA_IMAGES"
@@ -47,6 +53,7 @@
         android:icon="@android:drawable/ic_menu_camera"
         android:label="OpenTimelapse"
         android:supportsRtl="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
         <activity

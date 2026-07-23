@@ -136,6 +136,48 @@ class TimelapseEngineTest {
     }
 
     @Test
+    fun `stops before flattening the phone`() = runTest {
+        actuator.batteryCharging = false
+        actuator.batteryPercent = 12
+        val executor = ScriptedExecutor(time)
+
+        val summary = engine(executor).runSession("s1") { config() }
+
+        assertEquals(StopReason.BATTERY_LOW, summary.stopReason)
+        assertEquals(0, summary.cyclesRun, "the floor is checked before shooting, not after")
+    }
+
+    @Test
+    fun `a low battery on the charger keeps shooting`() = runTest {
+        // On a charger it is going up, not down - stopping would be wrong.
+        actuator.batteryCharging = true
+        actuator.batteryPercent = 5
+        val executor = ScriptedExecutor(time)
+
+        val summary = engine(executor).runSession("s1") {
+            config(endMode = EndMode.AFTER_DURATION, durationMinutes = 1)
+        }
+
+        assertEquals(StopReason.DURATION_REACHED, summary.stopReason)
+        assertTrue(summary.cyclesRun > 0)
+    }
+
+    @Test
+    fun `a zero floor disables the check entirely`() = runTest {
+        actuator.batteryCharging = false
+        actuator.batteryPercent = 1
+        val executor = ScriptedExecutor(time)
+
+        val summary = engine(executor).runSession("s1") {
+            config(endMode = EndMode.AFTER_DURATION, durationMinutes = 1).let {
+                it.copy(session = it.session.copy(stopBelowBatteryPercent = 0))
+            }
+        }
+
+        assertEquals(StopReason.DURATION_REACHED, summary.stopReason)
+    }
+
+    @Test
     fun `an overrunning cycle drops slots instead of shifting the whole series`() = runTest {
         val startedAt = time.now
         // Each cycle takes 70s against a 30s interval.

@@ -77,6 +77,11 @@ class MainActivity : ComponentActivity() {
                             onOpenLicenses = {
                                 startActivity(Intent(this@MainActivity, org.peekit.opentimelapse.ui.LicensesActivity::class.java))
                             },
+                            onTestWebhook = { action ->
+                                lifecycleScope.launch {
+                                    app.charging.test(app.configRepository.current().charging, action)
+                                }
+                            },
                         ),
                         modifier = Modifier.padding(padding),
                     )

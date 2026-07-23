@@ -20,6 +20,7 @@ data class TimelapseConfig(
     val naming: NamingConfig = NamingConfig(),
     val session: SessionConfig = SessionConfig(),
     val calibration: CalibrationState = CalibrationState(),
+    val charging: ChargingConfig = ChargingConfig(),
     /**
      * A hand-edited ffmpeg command reused for every render, blank until someone takes over.
      * Kept in config rather than per session: a command that worked for one shoot is
@@ -159,6 +160,14 @@ data class SessionConfig(
     val endMode: EndMode = EndMode.MANUAL,
     val durationMinutes: Int = 60,
     val endAtEpochMs: Long = 0L,
+    /**
+     * Stop rather than flatten the phone. Zero disables it.
+     *
+     * Needs no network, which is the point: charging webhooks are best effort - the socket
+     * may be unplugged, the hub down, the wifi gone - and this is what actually protects
+     * the battery when they fail.
+     */
+    val stopBelowBatteryPercent: Int = 15,
 )
 
 enum class EndMode { MANUAL, AFTER_DURATION, AT_TIME }
@@ -199,3 +208,29 @@ data class CalibrationState(
 ) {
     fun appliesTo(camera: String): Boolean = completed && cameraPackage == camera
 }
+
+/**
+ * Switching a smart socket when the battery crosses a threshold.
+ *
+ * The app deliberately does nothing clever: it calls a URL the user configures, so it works
+ * with Home Assistant, Node-RED, IFTTT or anything else, and the orchestration stays out of
+ * a timelapse app.
+ *
+ * Active only while a session runs. That avoids a permanently running battery watcher and
+ * lets the listener share the lifetime of the foreground service that already exists.
+ *
+ * The 40-80 band is not arbitrary: holding a lithium cell at 100% while it sits on a
+ * charger for days is what wears it out, and a phone shooting timelapses on a windowsill is
+ * exactly that case.
+ */
+@Serializable
+data class ChargingConfig(
+    val enabled: Boolean = false,
+    val lowPercent: Int = 40,
+    val highPercent: Int = 80,
+    val startChargingUrl: String = "",
+    val stopChargingUrl: String = "",
+    /** POST suits Home Assistant webhooks; IFTTT is happy with GET. */
+    val method: String = "POST",
+    val body: String = "",
+)

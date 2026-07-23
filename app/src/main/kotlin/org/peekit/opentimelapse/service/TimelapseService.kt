@@ -53,6 +53,8 @@ class TimelapseService : Service() {
     private var engine: TimelapseEngine? = null
     private var framesCaptured = 0
 
+    private val charging get() = app.charging
+
     /** Kept so the mandatory startForeground() at the top of onStartCommand says something true. */
     @Volatile
     private var notificationStatus = "Idle"
@@ -114,6 +116,9 @@ class TimelapseService : Service() {
             val watcher = launch {
                 app.configRepository.config.collect { liveConfig = it }
             }
+            // Session-scoped on purpose: a battery watcher that outlived the shoot would
+            // switch the user's socket while they were just using the phone.
+            if (!singleCycle) charging.start(liveConfig.charging)
 
             try {
                 // Resolved first so the session manifest records the real camera package.
@@ -154,6 +159,7 @@ class TimelapseService : Service() {
                 // NonCancellable because Stop cancels this job: a suspend call in a
                 // cancelled coroutine throws at its first suspension point, which
                 // silently lost the final manifest write and reported 0 frames.
+                charging.stop()
                 withContext(NonCancellable) { closeSession() }
                 watcher.cancel()
                 stopSelfSafely()
@@ -440,6 +446,7 @@ class TimelapseService : Service() {
     private fun sessionId(): String = "s${System.currentTimeMillis()}"
 
     override fun onDestroy() {
+        charging.stop()
         wakeLock.release()
         scope.cancel()
         super.onDestroy()
