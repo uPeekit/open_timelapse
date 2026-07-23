@@ -60,6 +60,7 @@ fun MainScreen(
     checks: List<SetupCheck>,
     log: List<LogEntry>,
     sessions: List<org.peekit.opentimelapse.core.model.SessionManifest>,
+    render: org.peekit.opentimelapse.data.RenderState,
     actions: MainActions,
     modifier: Modifier = Modifier,
 ) {
@@ -79,7 +80,15 @@ fun MainScreen(
         SettingsSection(config, actions.onConfigChange)
         PowerSection(config, actions.onConfigChange, actions.onTestWebhook)
         NetworkSection(config, actions.onConfigChange)
-        SessionsSection(sessions, actions.sessionActions)
+        SessionsSection(
+            sessions = sessions,
+            render = render,
+            openAfterRender = config.openVideoAfterRender,
+            onOpenAfterRenderChange = { on ->
+                actions.onConfigChange { it.copy(openVideoAfterRender = on) }
+            },
+            actions = actions.sessionActions,
+        )
         RenderCommandSection(config, actions.onConfigChange)
         LogSection(log, actions.onShareLog)
 

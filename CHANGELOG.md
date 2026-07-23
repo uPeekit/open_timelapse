@@ -33,6 +33,11 @@ Verified on Samsung One UI, OnePlus, and OPPO ColorOS.
 ### Rendering
 - On-device rendering with a bundled ffmpeg — no PC needed.
 - The exact ffmpeg command is shown and editable, or copyable for a desktop render.
+- A progress bar with percentage under the session while it renders, not only in the shade.
+- Optionally open the finished video automatically, to check a render at a glance.
+- A renamed session's folder and video take the prefix (`oppo/`, `oppo.mp4`), not a timestamp.
+- "Delete photos" removes a session's frames as well as its record (with confirmation);
+  plain "Delete" still only forgets the record.
 
 ### Diagnostics
 - Durable log: every line is written to a file that survives a crash, a restart, or a flat

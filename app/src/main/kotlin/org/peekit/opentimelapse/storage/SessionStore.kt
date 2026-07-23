@@ -35,7 +35,31 @@ class SessionStore(
 
     fun folderFor(name: String): File = File(storage.sessionsRoot(), name)
 
-    fun newSessionName(): String = "TL_" + STAMP.format(Date())
+    /**
+     * When frames are being renamed, the session takes the user's prefix - so the folder and
+     * the rendered video are `oppo/`, `oppo.mp4`, not an opaque `TL_20260723_120908`. Without
+     * naming there is no meaningful name to use, so it falls back to the timestamp.
+     *
+     * Made unique either way: two `oppo` sessions cannot share a folder, because their frames
+     * both start at `oppo00000001.jpg` and would collide.
+     */
+    fun newSessionName(config: TimelapseConfig): String {
+        val base = config.naming
+            .takeIf { it.enabled && it.prefix.isNotBlank() }
+            ?.prefix
+            ?: ("TL_" + STAMP.format(Date()))
+        return uniqueName(base)
+    }
+
+    private fun uniqueName(base: String): String {
+        if (!isTaken(base)) return base
+        var n = 2
+        while (isTaken("${base}_$n")) n++
+        return "${base}_$n"
+    }
+
+    private fun isTaken(name: String): Boolean =
+        folderFor(name).exists() || File(privateDir, "$name.json").exists()
 
     fun create(name: String, config: TimelapseConfig, startedAtMs: Long): SessionManifest =
         SessionManifest(
@@ -115,6 +139,29 @@ class SessionStore(
         // Remove the folder only when nothing of the user's is left in it.
         runCatching { if (folder.isDirectory && folder.list().isNullOrEmpty()) folder.delete() }
         Unit
+    }
+
+    /**
+     * Deletes the session AND its photos - a deliberately separate, destructive action from
+     * [delete], which only forgets the record. For a renamed session that is a self-contained
+     * folder; for one that kept the camera's own names, these are the originals in the camera
+     * roll, so the UI must confirm before calling this.
+     *
+     * Needs All-files access to remove files the camera app owns; a direct file delete is used
+     * where the path is known, falling back to MediaStore for a bare content:// entry.
+     */
+    suspend fun deletePhotos(manifest: SessionManifest) = withContext(Dispatchers.IO) {
+        manifest.framePaths.forEach { path ->
+            runCatching {
+                if (path.startsWith("content://")) {
+                    context.contentResolver.delete(android.net.Uri.parse(path), null, null)
+                } else {
+                    File(path).delete()
+                }
+            }
+        }
+        runCatching { folderFor(manifest.id).deleteRecursively() }
+        delete(manifest.id)
     }
 
     private companion object {

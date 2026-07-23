@@ -25,7 +25,7 @@ android {
         targetSdk = 35
         // Bump versionCode for every build you install over an older one; Android refuses
         // a downgrade. versionName is what humans read.
-        versionCode = 14
+        versionCode = 16
         versionName = "0.3.0"
     }
 

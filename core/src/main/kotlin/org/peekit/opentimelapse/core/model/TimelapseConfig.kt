@@ -28,6 +28,8 @@ data class TimelapseConfig(
      * almost always the one wanted for the next.
      */
     val customRenderCommand: String = "",
+    /** Open the finished video automatically, so a render can be checked at a glance. */
+    val openVideoAfterRender: Boolean = false,
 ) {
     /**
      * Resolves combinations that are individually valid but jointly meaningless.

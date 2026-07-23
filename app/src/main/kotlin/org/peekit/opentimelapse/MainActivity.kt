@@ -46,6 +46,25 @@ class MainActivity : ComponentActivity() {
                 val config by app.configRepository.config
                     .collectAsStateWithLifecycle(initialValue = TimelapseConfig())
                 val log by app.log.log.collectAsStateWithLifecycle()
+                val render by app.renderState.state.collectAsStateWithLifecycle()
+
+                // Open the finished video once per completion, when asked. rememberSaveable
+                // survives a rotation so it does not reopen; a completionId only advances on a
+                // genuinely new render.
+                var lastOpened by androidx.compose.runtime.saveable.rememberSaveable {
+                    mutableStateOf(0L)
+                }
+                androidx.compose.runtime.LaunchedEffect(render.completionId, config.openVideoAfterRender) {
+                    val id = render.completionId
+                    if (id > lastOpened &&
+                        render.phase == org.peekit.opentimelapse.data.RenderPhase.SUCCESS &&
+                        config.openVideoAfterRender &&
+                        render.outputUri != null
+                    ) {
+                        lastOpened = id
+                        openVideo(render.outputUri!!)
+                    }
+                }
 
                 Scaffold { padding ->
                     MainScreen(
@@ -53,6 +72,7 @@ class MainActivity : ComponentActivity() {
                         checks = checks,
                         log = log,
                         sessions = sessions,
+                        render = render,
                         actions = MainActions(
                             onStart = { TimelapseService.send(this, TimelapseService.ACTION_START) },
                             onStop = { TimelapseService.send(this, TimelapseService.ACTION_STOP) },
@@ -121,7 +141,22 @@ class MainActivity : ComponentActivity() {
                 sessions = app.sessionStore.loadAll()
             }
         },
+        onDeletePhotos = { session ->
+            lifecycleScope.launch {
+                app.sessionStore.deletePhotos(session)
+                sessions = app.sessionStore.loadAll()
+            }
+        },
     )
+
+    private fun openVideo(uriString: String) {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(android.net.Uri.parse(uriString), "video/mp4")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching { startActivity(intent) }
+            .onFailure { app.log.message("No app available to open the video") }
+    }
 
     private fun copyCommand(session: org.peekit.opentimelapse.core.model.SessionManifest) {
         lifecycleScope.launch {

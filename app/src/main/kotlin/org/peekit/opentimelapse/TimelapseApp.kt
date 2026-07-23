@@ -11,6 +11,7 @@ import android.util.Log
 import org.peekit.opentimelapse.data.ConfigRepository
 import org.peekit.opentimelapse.data.LogFile
 import org.peekit.opentimelapse.data.LogRepository
+import org.peekit.opentimelapse.data.RenderStateRepository
 import org.peekit.opentimelapse.data.RunStateRepository
 import org.peekit.opentimelapse.render.FfmpegRunner
 import org.peekit.opentimelapse.service.ChargingWebhooks
@@ -50,6 +51,9 @@ class TimelapseApp : Application() {
 
     /** The live session, published for the control server (and later the UI). */
     val runState by lazy { RunStateRepository() }
+
+    /** The live render, published so the session list can show progress and open the result. */
+    val renderState by lazy { RenderStateRepository() }
 
     val actuator by lazy { AndroidDeviceActuator(this) }
 
