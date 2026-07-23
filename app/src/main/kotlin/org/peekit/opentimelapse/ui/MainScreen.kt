@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -76,6 +77,7 @@ fun MainScreen(
         ControlsSection(blocking.isEmpty(), actions)
         SettingsSection(config, actions.onConfigChange)
         PowerSection(config, actions.onConfigChange, actions.onTestWebhook)
+        NetworkSection(config, actions.onConfigChange)
         SessionsSection(sessions, actions.sessionActions)
         RenderCommandSection(config, actions.onConfigChange)
         LogSection(log)
@@ -597,6 +599,101 @@ private fun PowerSection(
             }
         }
     }
+}
+
+/**
+ * Local network control: a switch, a generated token, and the QR to pair a laptop.
+ *
+ * Off by default, and the switch is the only thing visible until it is turned on. Enabling it
+ * mints a token; the QR encodes the pairing URL with the token in it, so a laptop scans once.
+ * The server itself only runs while a session is running - this screen just configures it.
+ */
+@Composable
+private fun NetworkSection(
+    config: TimelapseConfig,
+    onChange: ((TimelapseConfig) -> TimelapseConfig) -> Unit,
+) {
+    val net = config.network
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Control over wi-fi", style = MaterialTheme.typography.titleMedium)
+
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Check and stop from a laptop")
+                    Text(
+                        "Serves a small page on your wi-fi while a session runs - status, a " +
+                            "live preview, and a Stop button. Protected by a token; off unless " +
+                            "you turn it on.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = net.enabled,
+                    onCheckedChange = { on ->
+                        onChange {
+                            // Turning on mints a token if there is not one already; turning off
+                            // keeps it so re-enabling does not invalidate a paired laptop.
+                            val token = if (on && it.network.token.isBlank()) newToken() else it.network.token
+                            it.copy(network = it.network.copy(enabled = on, token = token))
+                        }
+                    },
+                )
+            }
+
+            if (net.enabled && net.token.isNotBlank()) {
+                val ip = remember { org.peekit.opentimelapse.net.LocalNetwork.ipv4Address() }
+                val url = ip?.let {
+                    org.peekit.opentimelapse.net.LocalNetwork.pairingUrl(it, net.port, net.token)
+                }
+
+                if (url != null) {
+                    val qr = remember(url) { org.peekit.opentimelapse.net.QrBitmap.render(url) }
+                    qr?.let {
+                        androidx.compose.foundation.Image(
+                            bitmap = it.asImageBitmap(),
+                            contentDescription = "Pairing QR code",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 260.dp),
+                        )
+                    }
+                    Text("Scan this, or open:", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        url,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                } else {
+                    Text(
+                        "Join a wi-fi network to get a pairing address.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+
+                Text(
+                    "The token is your key - anyone with it on your network can watch the " +
+                        "preview and stop the shoot.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+/** A URL-safe random token, generated on the device with a cryptographic source. */
+private fun newToken(): String {
+    val bytes = ByteArray(16)
+    java.security.SecureRandom().nextBytes(bytes)
+    return android.util.Base64.encodeToString(
+        bytes,
+        android.util.Base64.URL_SAFE or android.util.Base64.NO_PADDING or android.util.Base64.NO_WRAP,
+    )
 }
 
 /**

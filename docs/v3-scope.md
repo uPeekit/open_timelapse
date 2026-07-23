@@ -257,9 +257,9 @@ timelapses is exactly the case where this matters.
 2. ~~Start trigger on first manual shot~~ → **done**
 3. ~~Editable ffmpeg command~~ → **done**
 4. ~~Charging webhooks + battery-floor stop condition~~ → **done (0.3.0)** — see below
-5. Doze spike for a long-lived ffmpeg process
-6. Incremental encoding, if the spike passes
-7. Local network control
+5. ~~Local network control~~ → **done (0.3.0)** — see below
+6. Doze spike for a long-lived ffmpeg process
+7. Incremental encoding, if the spike passes
 
 Sizing is deliberately absent: the doze spike and the long-run test can both change the
 plan, and estimating past them would be guessing.
@@ -284,3 +284,27 @@ call the phone makes, so it needs none of the server, pairing or token work. Onl
   the host at the configured path. A field bug was caught and fixed in the process — every
   Settings text field lost keystrokes because it rendered from the async DataStore round-trip;
   `BoundTextField` now owns its text after the first edit.
+
+### Local network control — as built (0.3.0)
+
+A small HTTP server in the foreground service, so a phone on a windowsill can be checked and
+stopped from a laptop on the same wifi. Off by default, token-gated on every endpoint.
+
+- **`:core`** — all the decisions are pure and tested: `ControlAuth` routes a request, gates
+  it (only the shell page at `/` is public), and compares the token in constant time; the
+  `StatusSnapshot` is the wire format. `QrCode` is a from-scratch byte-mode encoder (no ZXing —
+  it isn't in the offline cache, and the dependency list is short on purpose), capped at
+  versions 1-5 / level L so it stays single-block. Its output was verified **scannable by a real
+  decoder** (OpenCV) off-device and pinned as a byte-exact golden test.
+- **`:app`** — `ControlServer` is a hand-rolled HTTP/1.1 server (~4 endpoints, no NanoHTTPD):
+  `/status`, `/preview` (last frame downscaled), `/start`, `/stop`, `/events` (SSE), and a
+  self-contained `/` page that needs nothing installed. `NsdRegistration` advertises it over
+  mDNS as `_opentimelapse._tcp`. The server lives exactly as long as a session.
+- **Security is the design.** No network permission existed before this; enabling the server
+  mints a token shown as a QR (the pairing URL with the token embedded), and every endpoint
+  including the preview requires it. The token persists so re-enabling does not unpair a laptop.
+- Verified end-to-end on the OnePlus: 401 without the token, correct JSON with it, token via
+  header or `?token=`, `/preview` 204 with no frames, `/stop` ending the session and tearing the
+  server down. Building it surfaced three subtle QR encoder bugs (transposed format bits and
+  dark module, and a data-placement desync where the timing-column skip double-processed a
+  column), all caught by diffing against a reference encoder and fixed before shipping.

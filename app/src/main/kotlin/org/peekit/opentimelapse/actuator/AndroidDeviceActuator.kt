@@ -119,10 +119,17 @@ class AndroidDeviceActuator(
         quietMs: Long,
     ): List<CapturedMedia> = media.awaitNewMedia(sinceMs, timeoutMs, quietMs)
 
-    override suspend fun battery(): BatteryReading {
-        // The sticky ACTION_BATTERY_CHANGED rather than BatteryManager properties: it is the
-        // one source that carries level and charge status in the same snapshot, so the two
-        // cannot disagree across a plug event.
+    override suspend fun battery(): BatteryReading = batteryNow()
+
+    /**
+     * The synchronous read behind [battery]. Exposed non-suspend so the control server can
+     * call it from its own socket thread without a coroutine.
+     *
+     * Uses the sticky ACTION_BATTERY_CHANGED rather than BatteryManager properties: it is the
+     * one source that carries level and charge status in the same snapshot, so the two cannot
+     * disagree across a plug event.
+     */
+    fun batteryNow(): BatteryReading {
         val status = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
             // Unreadable battery must not stop a session: report full and on the charger.
             ?: return BatteryReading(percent = 100, charging = true)

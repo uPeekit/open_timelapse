@@ -9,6 +9,7 @@ import org.peekit.opentimelapse.actuator.CameraResolver
 import org.peekit.opentimelapse.core.engine.Clock
 import org.peekit.opentimelapse.data.ConfigRepository
 import org.peekit.opentimelapse.data.LogRepository
+import org.peekit.opentimelapse.data.RunStateRepository
 import org.peekit.opentimelapse.render.FfmpegRunner
 import org.peekit.opentimelapse.service.ChargingWebhooks
 import org.peekit.opentimelapse.storage.SessionExporter
@@ -28,6 +29,9 @@ class TimelapseApp : Application() {
     val log by lazy { LogRepository() }
 
     val configRepository by lazy { ConfigRepository(this) }
+
+    /** The live session, published for the control server (and later the UI). */
+    val runState by lazy { RunStateRepository() }
 
     val actuator by lazy { AndroidDeviceActuator(this) }
 

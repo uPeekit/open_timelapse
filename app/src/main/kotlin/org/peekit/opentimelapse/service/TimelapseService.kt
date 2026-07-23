@@ -54,6 +54,8 @@ class TimelapseService : Service() {
     private var framesCaptured = 0
 
     private val charging get() = app.charging
+    private var controlServer: org.peekit.opentimelapse.net.ControlServer? = null
+    private var nsd: org.peekit.opentimelapse.net.NsdRegistration? = null
 
     /** Kept so the mandatory startForeground() at the top of onStartCommand says something true. */
     @Volatile
@@ -118,7 +120,10 @@ class TimelapseService : Service() {
             }
             // Session-scoped on purpose: a battery watcher that outlived the shoot would
             // switch the user's socket while they were just using the phone.
-            if (!singleCycle) charging.start(liveConfig.charging)
+            if (!singleCycle) {
+                charging.start(liveConfig.charging)
+                startControlServer(liveConfig)
+            }
 
             try {
                 // Resolved first so the session manifest records the real camera package.
@@ -160,6 +165,7 @@ class TimelapseService : Service() {
                 // cancelled coroutine throws at its first suspension point, which
                 // silently lost the final manifest write and reported 0 frames.
                 charging.stop()
+                stopControlServer()
                 withContext(NonCancellable) { closeSession() }
                 watcher.cancel()
                 stopSelfSafely()
@@ -329,6 +335,7 @@ class TimelapseService : Service() {
         val record = app.sessionStore.create(name, config, System.currentTimeMillis())
         manifest = record
         app.sessionStore.save(record)
+        app.runState.update { it.copy(sessionName = name) }
 
         // The manifest must describe what actually happened, not what was configured:
         // claiming a numbered sequence that was never produced would emit an ffmpeg
@@ -355,6 +362,53 @@ class TimelapseService : Service() {
         val record = manifest ?: return
         app.sessionStore.save(record.copy(endedAtMs = System.currentTimeMillis()))
         manifest = null
+    }
+
+    /**
+     * Brings up the LAN control server for the session, but only when it is switched on and
+     * holds a token. Off is the default, and a tokenless port is never opened - [NetworkConfig.runnable]
+     * enforces both.
+     */
+    private fun startControlServer(config: TimelapseConfig) {
+        if (!config.network.runnable) return
+
+        app.runState.update {
+            it.copy(
+                serverState = org.peekit.opentimelapse.core.net.ServerState.RUNNING,
+                intervalSeconds = config.intervalSeconds,
+                startedAtMs = System.currentTimeMillis(),
+            )
+        }
+
+        val backend = org.peekit.opentimelapse.net.AppControlBackend(this, app.actuator, app.runState)
+        val server = org.peekit.opentimelapse.net.ControlServer(backend, app.log)
+        server.start(config.network.token, config.network.port)
+        controlServer = server
+
+        val port = server.boundPort
+        if (port <= 0) {
+            controlServer = null
+            return
+        }
+
+        val registration = org.peekit.opentimelapse.net.NsdRegistration(this, app.log)
+        registration.register(port)
+        nsd = registration
+
+        val ip = org.peekit.opentimelapse.net.LocalNetwork.ipv4Address()
+        if (ip != null) {
+            app.log.message("Control server live at http://$ip:$port - scan the QR in the app to pair")
+        } else {
+            app.log.message("Control server live on port $port")
+        }
+    }
+
+    private fun stopControlServer() {
+        nsd?.unregister()
+        nsd = null
+        controlServer?.stop()
+        controlServer = null
+        app.runState.reset()
     }
 
     /**
@@ -403,6 +457,17 @@ class TimelapseService : Service() {
                 framesCaptured++
                 notification.update("Running - frame ${event.index} captured", framesCaptured)
 
+                // Published for the control server: frame count, the preview source, and an
+                // estimate of the next slot (the engine schedules absolutely, but last+interval
+                // is close enough for a status readout).
+                app.runState.update {
+                    it.copy(
+                        framesCaptured = framesCaptured,
+                        lastFramePath = event.paths.lastOrNull() ?: it.lastFramePath,
+                        nextFrameAtMs = app.clock.nowMs() + liveConfig.intervalMs,
+                    )
+                }
+
                 manifest = manifest?.let { record ->
                     record.copy(
                         frameCount = framesCaptured,
@@ -447,6 +512,7 @@ class TimelapseService : Service() {
 
     override fun onDestroy() {
         charging.stop()
+        stopControlServer()
         wakeLock.release()
         scope.cancel()
         super.onDestroy()

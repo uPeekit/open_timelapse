@@ -21,6 +21,7 @@ data class TimelapseConfig(
     val session: SessionConfig = SessionConfig(),
     val calibration: CalibrationState = CalibrationState(),
     val charging: ChargingConfig = ChargingConfig(),
+    val network: NetworkConfig = NetworkConfig(),
     /**
      * A hand-edited ffmpeg command reused for every render, blank until someone takes over.
      * Kept in config rather than per session: a command that worked for one shoot is
