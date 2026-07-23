@@ -14,8 +14,11 @@ data class LogEntry(
     val atMs: Long,
     val text: String,
     val ok: Boolean? = null,
+    /** True for lines read back from the persisted file, which are already formatted. */
+    val preformatted: Boolean = false,
 ) {
     fun format(): String {
+        if (preformatted) return text
         val mark = when (ok) {
             true -> "OK  "
             false -> "FAIL"
@@ -34,10 +37,17 @@ data class LogEntry(
  *
  * Bounded on purpose: an overnight session at 10s intervals produces thousands of events,
  * and the Debug screen only ever shows the end of it.
+ *
+ * The in-memory buffer is the live view; [file] is the durable record that outlives the
+ * process, so a crash or a flat battery still leaves something to read afterwards.
  */
-class LogRepository : EventSink {
+class LogRepository(private val file: LogFile? = null) : EventSink {
 
-    private val entries = MutableStateFlow<List<LogEntry>>(emptyList())
+    // Seeded from the persisted tail so reopening after a crash shows what happened, rather
+    // than an empty log.
+    private val entries = MutableStateFlow(
+        file?.tail(MAX_ENTRIES).orEmpty().map { LogEntry(0L, it, preformatted = true) },
+    )
 
     val log: StateFlow<List<LogEntry>> = entries.asStateFlow()
 
@@ -49,14 +59,25 @@ class LogRepository : EventSink {
         append(LogEntry(System.currentTimeMillis(), text))
     }
 
+    /**
+     * Clears the live view at the start of a session, but writes a boundary to the file
+     * rather than erasing it - the point of the file is to survive across sessions.
+     */
     fun clear() {
         entries.value = emptyList()
+        file?.append("──────── new session ────────")
     }
+
+    /** The whole log as a single file, for sharing off the device. */
+    fun exportFile(): java.io.File? = file?.exportFile()
 
     private fun append(entry: LogEntry) {
         entries.value = (entries.value + entry).takeLast(MAX_ENTRIES)
+        val line = entry.format()
         // Mirrored to logcat so a running session can be watched over adb without the UI.
-        Logcat.i(entry.format())
+        Logcat.i(line)
+        // And to disk, flushed immediately, so the record survives the process.
+        file?.append(line)
     }
 
     private fun okOf(event: EngineEvent): Boolean? = when (event) {

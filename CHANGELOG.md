@@ -34,6 +34,12 @@ Verified on Samsung One UI, OnePlus, and OPPO ColorOS.
 - On-device rendering with a bundled ffmpeg — no PC needed.
 - The exact ffmpeg command is shown and editable, or copyable for a desktop render.
 
+### Diagnostics
+- Durable log: every line is written to a file that survives a crash, a restart, or a flat
+  battery, so you can see what happened to an unattended shoot afterwards. An uncaught crash
+  writes its stack trace there too. Reopening the app shows the persisted log, and a Share
+  button sends it off the device.
+
 ### Notes
 - **Not distributable on Google Play** (accessibility-service policy). Sideload, or install
   from F-Droid.

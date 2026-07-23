@@ -51,6 +51,7 @@ data class MainActions(
     val onCalibrate: () -> Unit,
     val onDeclineCalibration: () -> Unit,
     val onTestWebhook: (ChargingAction) -> Unit,
+    val onShareLog: () -> Unit,
 )
 
 @Composable
@@ -80,7 +81,7 @@ fun MainScreen(
         NetworkSection(config, actions.onConfigChange)
         SessionsSection(sessions, actions.sessionActions)
         RenderCommandSection(config, actions.onConfigChange)
-        LogSection(log)
+        LogSection(log, actions.onShareLog)
 
         androidx.compose.material3.TextButton(onClick = actions.onOpenLicenses) {
             Text("Open source licences")
@@ -783,10 +784,19 @@ private fun RenderCommandSection(
 }
 
 @Composable
-private fun LogSection(log: List<LogEntry>) {
+private fun LogSection(log: List<LogEntry>, onShareLog: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Log", style = MaterialTheme.typography.titleMedium)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Log", style = MaterialTheme.typography.titleMedium)
+                // Shares the durable file, which spans past sessions and any crash - not just
+                // what happens to be on screen.
+                androidx.compose.material3.TextButton(onClick = onShareLog) { Text("Share") }
+            }
 
             if (log.isEmpty()) {
                 Text("Nothing yet.", style = MaterialTheme.typography.bodySmall)

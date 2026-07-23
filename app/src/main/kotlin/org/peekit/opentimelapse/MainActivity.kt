@@ -82,6 +82,7 @@ class MainActivity : ComponentActivity() {
                                     app.charging.test(app.configRepository.current().charging, action)
                                 }
                             },
+                            onShareLog = ::shareLog,
                         ),
                         modifier = Modifier.padding(padding),
                     )
@@ -131,6 +132,22 @@ class MainActivity : ComponentActivity() {
             )
             app.log.message("ffmpeg command copied to clipboard")
         }
+    }
+
+    private fun shareLog() {
+        val file = app.log.exportFile() ?: return
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            this,
+            "$packageName.fileprovider",
+            file,
+        )
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, "OpenTimelapse log")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching { startActivity(Intent.createChooser(send, "Share log")) }
     }
 
     private fun openFix(check: SetupCheck) {
