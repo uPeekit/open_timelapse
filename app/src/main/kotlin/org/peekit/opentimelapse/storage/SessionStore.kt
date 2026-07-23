@@ -10,7 +10,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import org.peekit.opentimelapse.core.model.SessionManifest
 import org.peekit.opentimelapse.core.model.TimelapseConfig
-import org.peekit.opentimelapse.spike.SpikeLog
+import org.peekit.opentimelapse.Logcat
 
 /**
  * Records what was shot.
@@ -57,7 +57,7 @@ class SessionStore(
         val document = json.encodeToString(manifest)
 
         runCatching { File(privateDir, "${manifest.id}.json").writeText(document) }
-            .onFailure { SpikeLog.log("could not record session ${manifest.id}: ${it.message}") }
+            .onFailure { Logcat.i("could not record session ${manifest.id}: ${it.message}") }
 
         // Best effort: needs All-files access, and its absence must not fail the session.
         runCatching {

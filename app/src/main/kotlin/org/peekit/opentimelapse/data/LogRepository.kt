@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.peekit.opentimelapse.core.engine.EngineEvent
 import org.peekit.opentimelapse.core.engine.EventSink
-import org.peekit.opentimelapse.spike.SpikeLog
+import org.peekit.opentimelapse.Logcat
 
 data class LogEntry(
     val atMs: Long,
@@ -56,7 +56,7 @@ class LogRepository : EventSink {
     private fun append(entry: LogEntry) {
         entries.value = (entries.value + entry).takeLast(MAX_ENTRIES)
         // Mirrored to logcat so a running session can be watched over adb without the UI.
-        SpikeLog.log(entry.format())
+        Logcat.i(entry.format())
     }
 
     private fun okOf(event: EngineEvent): Boolean? = when (event) {

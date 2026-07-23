@@ -4,7 +4,6 @@ import android.app.Activity
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
-import org.peekit.opentimelapse.spike.SpikeLog
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -32,7 +31,7 @@ class WakeActivity : Activity() {
         }
 
         lastStartedAtMs.set(System.currentTimeMillis())
-        SpikeLog.log("WakeActivity.onCreate ran")
+        Logcat.i("WakeActivity.onCreate ran")
         finish()
     }
 

@@ -12,7 +12,7 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.peekit.opentimelapse.core.ui.NodeBounds
 import org.peekit.opentimelapse.core.ui.UiNode
-import org.peekit.opentimelapse.spike.SpikeLog
+import org.peekit.opentimelapse.Logcat
 
 /**
  * The only component that can touch the screen on our behalf.
@@ -29,12 +29,12 @@ class TimelapseAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         AccessibilityBridge.register(this)
-        SpikeLog.log("AccessibilityService connected")
+        Logcat.i("AccessibilityService connected")
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
         AccessibilityBridge.unregister()
-        SpikeLog.log("AccessibilityService unbound")
+        Logcat.i("AccessibilityService unbound")
         return super.onUnbind(intent)
     }
 
@@ -137,7 +137,7 @@ class TimelapseAccessibilityService : AccessibilityService() {
                 // Routinely reported for a gesture that worked: the keyguard grabs the touch
                 // stream to run its own dismiss animation. Never treated as authoritative.
                 override fun onCancelled(description: GestureDescription?) {
-                    SpikeLog.log("gesture $label reported cancelled (may still have landed)")
+                    Logcat.i("gesture $label reported cancelled (may still have landed)")
                     if (continuation.isActive) continuation.resume(false)
                 }
             }

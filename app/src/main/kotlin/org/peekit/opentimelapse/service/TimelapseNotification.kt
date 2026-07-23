@@ -7,7 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import org.peekit.opentimelapse.spike.SpikeActivity
+import org.peekit.opentimelapse.MainActivity
 
 /** The persistent notification: current status, frames so far, and a Stop action. */
 class TimelapseNotification(private val context: Context) {
@@ -27,7 +27,7 @@ class TimelapseNotification(private val context: Context) {
         val open = PendingIntent.getActivity(
             context,
             0,
-            Intent(context, SpikeActivity::class.java),
+            Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val stop = PendingIntent.getService(
