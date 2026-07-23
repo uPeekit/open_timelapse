@@ -16,6 +16,40 @@ Play policy reserves for accessibility. Sideload it, or publish through F-Droid.
 
 ---
 
+## Built for long, unattended shoots
+
+- **Stop conditions.** End after a duration, at a wall-clock time, or when the battery
+  falls to a floor (so the phone is not shot flat and the frames lost).
+- **Charging control.** While a session runs, cross a low or high battery threshold and the
+  app calls a URL you configure — to switch a smart plug and keep the battery in a healthy
+  band over a multi-day shoot. Method and body are set per direction. Off by default.
+- **Check it from a laptop.** An optional local web page — status, a live preview, and a
+  Stop button — served on your wi-fi only while a session runs, protected by a token you
+  pair once by QR. Off by default.
+- **On-device rendering.** A bundled ffmpeg turns the frames into an mp4 without a PC; the
+  exact command is shown and editable, or copyable for a desktop render.
+
+## Permissions
+
+The app asks for what automation needs and nothing more. It makes **no network calls of its
+own** — no analytics, no phoning home. The only requests it ever sends are to URLs you type
+into charging control, or from a laptop you point at the local page.
+
+| Permission | Why |
+|---|---|
+| **Accessibility service** | The whole mechanism: wake, swipe to unlock, tap the shutter, lock again. Never reads or exfiltrates screen content. |
+| `INTERNET` | Only for charging control (a URL you configure) and the local page. Both are off by default. |
+| `READ_MEDIA_IMAGES` / `READ_EXTERNAL_STORAGE` | Read back the photo the camera just wrote, to confirm each frame actually landed. |
+| `MANAGE_EXTERNAL_STORAGE` | Only when *Rename frames* is on — renaming a file the camera app owns is impossible otherwise on Android 11+. Never requested unless you enable naming. |
+| `QUERY_ALL_PACKAGES` | List installed camera apps so you can pick one; also resolves the default via `IMAGE_CAPTURE`. |
+| Exact alarms, wake lock, battery-optimisation exemption | Fire each interval on time with the screen off; doze would otherwise defer them. |
+| Foreground service (special-use, media-processing) | Keep the session and the render alive with the screen off. |
+| `POST_NOTIFICATIONS` | The ongoing notification showing status and a Stop button. |
+
+No location, contacts, microphone, or account permissions are requested.
+
+---
+
 ## Prerequisites
 
 - **JDK 21.** Android Studio's bundled JBR works; a newer system JDK will not. Every
@@ -91,14 +125,14 @@ installed.
 1. **Bump the version** in `app/build.gradle.kts`:
 
    ```kotlin
-   versionCode = 3        // must increase every time; Android refuses a downgrade
-   versionName = "0.3"    // what humans see
+   versionCode = 13       // must increase every time; Android refuses a downgrade
+   versionName = "0.3.0"  // what humans see
    ```
 
 2. **Build and verify:**
 
    ```sh
-   ./gradlew :core:test          # 90 tests; the engine's behaviour lives here
+   ./gradlew :core:test          # the engine's behaviour lives here
    ./gradlew :app:assembleRelease
    ```
 
