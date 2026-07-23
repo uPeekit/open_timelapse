@@ -75,8 +75,24 @@ class ChargingThresholdsTest {
     @Test
     fun `an unconfigured url yields no destination`() {
         val partial = ChargingThresholds(config.copy(stopChargingUrl = ""))
-        assertEquals("https://ha/start", partial.urlFor(ChargingAction.START_CHARGING))
-        assertNull(partial.urlFor(ChargingAction.STOP_CHARGING))
+        assertEquals("https://ha/start", partial.callFor(ChargingAction.START_CHARGING)?.url)
+        assertNull(partial.callFor(ChargingAction.STOP_CHARGING))
+    }
+
+    @Test
+    fun `each direction carries its own method and body`() {
+        val custom = ChargingThresholds(
+            config.copy(
+                startMethod = "GET", startBody = "",
+                stopMethod = "POST", stopBody = """{"state":"off"}""",
+            ),
+        )
+        val start = custom.callFor(ChargingAction.START_CHARGING)
+        val stop = custom.callFor(ChargingAction.STOP_CHARGING)
+        assertEquals("GET", start?.method)
+        assertEquals("", start?.body)
+        assertEquals("POST", stop?.method)
+        assertEquals("""{"state":"off"}""", stop?.body)
     }
 
     @Test

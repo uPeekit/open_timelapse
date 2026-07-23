@@ -229,9 +229,16 @@ data class ChargingConfig(
     val enabled: Boolean = false,
     val lowPercent: Int = 40,
     val highPercent: Int = 80,
+    /**
+     * Method and body are per-URL, not shared: the on and off endpoints are frequently built
+     * differently - a Shelly plug toggles with two different GET URLs and no body, while Home
+     * Assistant wants a POST with a JSON payload that differs for on and off. One shared verb
+     * and body could not express that.
+     */
     val startChargingUrl: String = "",
+    val startMethod: String = "POST",
+    val startBody: String = "",
     val stopChargingUrl: String = "",
-    /** POST suits Home Assistant webhooks; IFTTT is happy with GET. */
-    val method: String = "POST",
-    val body: String = "",
+    val stopMethod: String = "POST",
+    val stopBody: String = "",
 )

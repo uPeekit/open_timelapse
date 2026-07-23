@@ -15,6 +15,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.peekit.opentimelapse.core.engine.BatteryReading
 import org.peekit.opentimelapse.core.engine.ChargingAction
 import org.peekit.opentimelapse.core.engine.ChargingThresholds
+import org.peekit.opentimelapse.core.engine.WebhookCall
 import org.peekit.opentimelapse.core.model.ChargingConfig
 import org.peekit.opentimelapse.data.LogRepository
 
@@ -66,13 +67,12 @@ class ChargingWebhooks(
 
     /** Sends one webhook now, so a setup can be checked without draining a real battery. */
     fun test(config: ChargingConfig, action: ChargingAction) {
-        val rules = ChargingThresholds(config)
-        val url = rules.urlFor(action)
-        if (url == null) {
+        val call = ChargingThresholds(config).callFor(action)
+        if (call == null) {
             log.message("No URL configured for $action")
             return
         }
-        scope.launch { send(url, config, action) }
+        scope.launch { send(call, action) }
     }
 
     private fun fire(
@@ -81,26 +81,26 @@ class ChargingWebhooks(
         config: ChargingConfig,
         reading: BatteryReading,
     ) {
-        val url = rules.urlFor(action) ?: run {
+        val call = rules.callFor(action) ?: run {
             log.message("$action at ${reading.percent}% but no URL is configured")
             return
         }
         log.message("Battery ${reading.percent}% -> $action")
-        scope.launch { send(url, config, action) }
+        scope.launch { send(call, action) }
     }
 
-    private suspend fun send(url: String, config: ChargingConfig, action: ChargingAction) {
+    private suspend fun send(call: WebhookCall, action: ChargingAction) {
         withContext(Dispatchers.IO) {
             val result = withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
                 runCatching {
-                    val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                        requestMethod = config.method.uppercase().takeIf { it in METHODS } ?: "POST"
+                    val connection = (URL(call.url).openConnection() as HttpURLConnection).apply {
+                        requestMethod = call.method.uppercase().takeIf { it in METHODS } ?: "POST"
                         connectTimeout = REQUEST_TIMEOUT_MS.toInt()
                         readTimeout = REQUEST_TIMEOUT_MS.toInt()
-                        if (requestMethod != "GET" && config.body.isNotBlank()) {
+                        if (requestMethod != "GET" && call.body.isNotBlank()) {
                             doOutput = true
                             setRequestProperty("Content-Type", "application/json")
-                            outputStream.use { it.write(config.body.toByteArray()) }
+                            outputStream.use { it.write(call.body.toByteArray()) }
                         }
                     }
                     val code = connection.responseCode

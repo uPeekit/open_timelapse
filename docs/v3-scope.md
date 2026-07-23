@@ -220,9 +220,12 @@ registers and unregisters with the foreground service that already exists for th
 2. **Charging state, not just level.** "≥ high *and charging*" → stop; "≤ low *and not
    charging*" → start. Otherwise an already-unplugged phone is repeatedly told to stop
    charging.
-3. **Method, headers and body configurable.** IFTTT accepts a bare GET, Home Assistant
-   wants a POST, a REST endpoint may need a token header. URL-only would exclude half the
-   plausible integrations.
+3. **Method and body configurable, per direction.** IFTTT accepts a bare GET, Home Assistant
+   wants a POST, a REST endpoint may need its own payload - and the on and off endpoints are
+   frequently built differently (a Shelly toggles with two different GET URLs and no body,
+   Home Assistant a POST whose JSON differs per direction). So method and body are set
+   separately for on and off, not shared. URL-only, or one shared verb/body, would exclude
+   half the plausible integrations.
 4. **A Test button.** Otherwise verifying a setup means waiting for a real battery to reach
    40%, turning a three-second check into a three-hour one.
 

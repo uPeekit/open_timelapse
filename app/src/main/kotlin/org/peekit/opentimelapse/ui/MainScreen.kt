@@ -541,6 +541,10 @@ private fun PowerSection(
                     )
                 }
 
+                // Each direction gets its own URL, method and body: the on and off endpoints
+                // are often shaped differently (a Shelly toggles with two GETs, Home Assistant
+                // wants a POST with a payload that differs per direction).
+                Text("When charge is needed", style = MaterialTheme.typography.titleSmall)
                 BoundTextField(
                     value = charging.startChargingUrl,
                     onValueChange = { typed ->
@@ -550,7 +554,26 @@ private fun PowerSection(
                     placeholder = "http://192.168.1.50/relay/0?turn=on",
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BoundTextField(
+                        value = charging.startMethod,
+                        onValueChange = { typed ->
+                            onChange { it.copy(charging = it.charging.copy(startMethod = typed.uppercase().trim())) }
+                        },
+                        label = "Method",
+                        modifier = Modifier.weight(1f),
+                    )
+                    BoundTextField(
+                        value = charging.startBody,
+                        onValueChange = { typed ->
+                            onChange { it.copy(charging = it.charging.copy(startBody = typed)) }
+                        },
+                        label = "Body (optional)",
+                        modifier = Modifier.weight(2f),
+                    )
+                }
 
+                Text("When charge is full", style = MaterialTheme.typography.titleSmall)
                 BoundTextField(
                     value = charging.stopChargingUrl,
                     onValueChange = { typed ->
@@ -560,20 +583,19 @@ private fun PowerSection(
                     placeholder = "http://192.168.1.50/relay/0?turn=off",
                     modifier = Modifier.fillMaxWidth(),
                 )
-
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     BoundTextField(
-                        value = charging.method,
+                        value = charging.stopMethod,
                         onValueChange = { typed ->
-                            onChange { it.copy(charging = it.charging.copy(method = typed.uppercase().trim())) }
+                            onChange { it.copy(charging = it.charging.copy(stopMethod = typed.uppercase().trim())) }
                         },
                         label = "Method",
                         modifier = Modifier.weight(1f),
                     )
                     BoundTextField(
-                        value = charging.body,
+                        value = charging.stopBody,
                         onValueChange = { typed ->
-                            onChange { it.copy(charging = it.charging.copy(body = typed)) }
+                            onChange { it.copy(charging = it.charging.copy(stopBody = typed)) }
                         },
                         label = "Body (optional)",
                         modifier = Modifier.weight(2f),

@@ -10,6 +10,13 @@ data class BatteryReading(
 /** What the phone should be told to do about its charger. */
 enum class ChargingAction { START_CHARGING, STOP_CHARGING }
 
+/** One resolved webhook: where to call, how, and with what. The Android side just sends it. */
+data class WebhookCall(
+    val url: String,
+    val method: String,
+    val body: String,
+)
+
 /**
  * Decides when to ask for the charger to be switched.
  *
@@ -47,9 +54,14 @@ class ChargingThresholds(private val config: ChargingConfig) {
         return null
     }
 
-    /** The URL for an action, or null when the user has not configured one. */
-    fun urlFor(action: ChargingAction): String? = when (action) {
-        ChargingAction.START_CHARGING -> config.startChargingUrl.takeIf { it.isNotBlank() }
-        ChargingAction.STOP_CHARGING -> config.stopChargingUrl.takeIf { it.isNotBlank() }
+    /** The call for an action, or null when the user has not configured a URL for it. */
+    fun callFor(action: ChargingAction): WebhookCall? = when (action) {
+        ChargingAction.START_CHARGING ->
+            config.startChargingUrl.takeIf { it.isNotBlank() }
+                ?.let { WebhookCall(it, config.startMethod, config.startBody) }
+
+        ChargingAction.STOP_CHARGING ->
+            config.stopChargingUrl.takeIf { it.isNotBlank() }
+                ?.let { WebhookCall(it, config.stopMethod, config.stopBody) }
     }
 }
