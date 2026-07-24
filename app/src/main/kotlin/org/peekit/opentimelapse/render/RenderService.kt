@@ -18,6 +18,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import org.peekit.opentimelapse.R
 import org.peekit.opentimelapse.TimelapseApp
 import org.peekit.opentimelapse.core.model.SessionManifest
 import org.peekit.opentimelapse.core.render.Encoder
@@ -44,6 +45,12 @@ class RenderService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Unconditionally, before anything else: every startForegroundService() must be
+        // answered with startForeground() or the system kills the process - the exact crash
+        // TimelapseService had on Stop. This covers the "render already running" and
+        // "session id missing" paths too, which used to skip it.
+        goForeground("Preparing...", null)
+
         when (intent?.action) {
             ACTION_CANCEL -> {
                 job?.cancel()
@@ -64,7 +71,6 @@ class RenderService : Service() {
             app.log.message("A render is already running")
             return
         }
-        goForeground("Preparing...", null)
         app.renderState.starting(sessionId)
 
         val spec = RenderSpec(
@@ -275,7 +281,7 @@ class RenderService : Service() {
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("OpenTimelapse")
             .setContentText(status)
-            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .apply { if (percent != null) setProgress(100, percent, false) }
@@ -312,7 +318,6 @@ class RenderService : Service() {
         const val EXTRA_SESSION_ID = "session"
         const val EXTRA_FPS = "fps"
         const val EXTRA_LONG_EDGE = "longEdge"
-        const val EXTRA_ARCHIVAL = "archival"
         const val EXTRA_DEFLICKER = "deflicker"
         const val EXTRA_COMMAND = "command"
 
@@ -328,7 +333,6 @@ class RenderService : Service() {
                 .putExtra(EXTRA_SESSION_ID, sessionId)
                 .putExtra(EXTRA_FPS, spec.fps)
                 .putExtra(EXTRA_LONG_EDGE, spec.longEdgePx)
-                .putExtra(EXTRA_ARCHIVAL, spec.encoder == Encoder.X264)
                 .putExtra(EXTRA_DEFLICKER, spec.deflicker)
                 .putExtra(EXTRA_COMMAND, spec.customCommand)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

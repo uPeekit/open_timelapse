@@ -75,8 +75,6 @@ class TimelapseAccessibilityService : AccessibilityService() {
         }
     }
 
-    fun activeWindowNodes(): List<UiNode> = NodeFinder.flatten(rootInActiveWindow)
-
     suspend fun swipe(
         startXPercent: Float,
         startYPercent: Float,
@@ -110,19 +108,29 @@ class TimelapseAccessibilityService : AccessibilityService() {
         )
     }
 
+    /** How a click was (or was not) delivered. [dispatched] false means nothing was pressed. */
+    data class ClickDispatch(val dispatched: Boolean, val how: String)
+
     /**
      * Clicks the node occupying [bounds], preferring ACTION_CLICK and falling back to a tap.
      *
-     * The returned string describes how it was done, for the log. Note that the result is
-     * *not* proof of anything: callers verify against device state.
+     * [ClickDispatch.how] is for the log. A dispatched click is still *not* proof the press
+     * did anything - callers verify against device state - but an undispatched one is a
+     * fact, and must not be reported as success.
      */
-    suspend fun clickAt(bounds: NodeBounds): String {
+    suspend fun clickAt(bounds: NodeBounds): ClickDispatch {
         val match = rootInActiveWindow?.let { findByBounds(it, bounds, 0) }
         if (match != null && match.isClickable) {
-            if (match.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return "ACTION_CLICK"
+            if (match.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                return ClickDispatch(dispatched = true, how = "ACTION_CLICK")
+            }
         }
         val tapped = tap(bounds.centerX.toFloat(), bounds.centerY.toFloat())
-        return if (tapped) "coordinate tap" else "click not dispatched"
+        return if (tapped) {
+            ClickDispatch(dispatched = true, how = "coordinate tap")
+        } else {
+            ClickDispatch(dispatched = false, how = "click not dispatched")
+        }
     }
 
     fun lockScreen(): Boolean = performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)

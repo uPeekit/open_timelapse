@@ -90,6 +90,9 @@ class FakeActuator(
 
     var media: List<CapturedMedia> = listOf(jpeg())
 
+    /** The owner hint the last awaitNewMedia call carried, so tests can assert it is passed. */
+    var lastMediaOwner: String? = null
+
     override suspend fun isScreenOn(): Boolean = screenOn
 
     override suspend fun isKeyguardShowing(): Boolean = keyguardShowing
@@ -134,15 +137,21 @@ class FakeActuator(
         sinceMs: Long,
         timeoutMs: Long,
         quietMs: Long,
+        expectedOwner: String,
     ): List<CapturedMedia> {
         calls += "awaitNewMedia"
+        lastMediaOwner = expectedOwner
         return media
     }
 
     var batteryPercent: Int = 100
     var batteryCharging: Boolean = true
 
-    override suspend fun battery(): BatteryReading = BatteryReading(batteryPercent, batteryCharging)
+    /** When set, wins over the fixed fields - lets a test tie the reading to virtual time. */
+    var batteryProvider: (() -> BatteryReading)? = null
+
+    override suspend fun battery(): BatteryReading =
+        batteryProvider?.invoke() ?: BatteryReading(batteryPercent, batteryCharging)
 
     override suspend fun lockScreen(): StepResult {
         calls += "lockScreen"

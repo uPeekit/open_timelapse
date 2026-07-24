@@ -85,25 +85,22 @@ class TimelapseEngine(
                 break
             }
 
-            // Checked before shooting, not after: the point is to leave charge in the
-            // phone, and a frame taken at the floor defeats that.
-            val floor = config.session.stopBelowBatteryPercent
-            if (floor > 0) {
-                val battery = actuator.battery()
-                if (!battery.charging && battery.percent <= floor) {
-                    events.emit(
-                        EngineEvent.Message(
-                            clock.nowMs(),
-                            "Stopping at ${battery.percent}% to leave the phone some charge",
-                        )
-                    )
-                    reason = StopReason.BATTERY_LOW
-                    break
-                }
+            // Before the wait: an already-drained battery should stop now, not idle out
+            // one more interval first.
+            if (belowBatteryFloor(config)) {
+                reason = StopReason.BATTERY_LOW
+                break
             }
 
             if (clock.nowMs() < slotAtMs) waiter.awaitUntil(slotAtMs)
             if (stopRequested) break
+
+            // And again after it: the wait can be hours long, and a reading taken before
+            // it says nothing about the battery at the moment the frame is actually shot.
+            if (belowBatteryFloor(config)) {
+                reason = StopReason.BATTERY_LOW
+                break
+            }
 
             val outcome = cycleRunner.run(config, index)
             cycles++
@@ -141,6 +138,21 @@ class TimelapseEngine(
             firstIndex = firstIndex, nextIndex = index,
             reason = reason, rejection = null,
         )
+    }
+
+    /** True when the session should stop to leave charge in the phone. Zero disables it. */
+    private suspend fun belowBatteryFloor(config: TimelapseConfig): Boolean {
+        val floor = config.session.stopBelowBatteryPercent
+        if (floor <= 0) return false
+        val battery = actuator.battery()
+        if (battery.charging || battery.percent > floor) return false
+        events.emit(
+            EngineEvent.Message(
+                clock.nowMs(),
+                "Stopping at ${battery.percent}% to leave the phone some charge",
+            )
+        )
+        return true
     }
 
     private fun stopReasonFor(

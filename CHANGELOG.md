@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.4.0
+
+Hardening release: everything found in the project's first external code review, fixed.
+
+### Fixed
+- Renders no longer fail on phones set to a comma-decimal locale (German, Russian, ...):
+  the ffmpeg concat list always uses a decimal point now.
+- Tapping Render while a render was already running could crash the app with the
+  `startForegroundService` timeout; the render service now goes foreground unconditionally,
+  the same fix the session service got in 0.2.x.
+- The control server leaked four threads per session; its worker pool is now shut down with
+  the session.
+- Capture confirmation prefers files the camera app actually owns, so a messenger
+  auto-download or a screenshot landing mid-cycle is no longer counted as a frame, renamed
+  into the session, or deleted with it.
+- A shutter click that was never dispatched is reported as the failure it is, instead of
+  success.
+- The battery floor is re-checked after the interval wait, so an hours-long interval can no
+  longer shoot a frame on a reading taken hours ago.
+- Charging-webhook settings apply on the next battery reading, like every other setting —
+  not on the next session.
+- Session manifest writes are serialized, closing a race between the periodic flush and the
+  final write at session end.
+- Text fields follow externally-changed values again once unfocused (calibration raising the
+  interval now shows up), while still owning the text during typing.
+
+### Changed
+- `QUERY_ALL_PACKAGES` is no longer requested — resolving the camera via `IMAGE_CAPTURE`
+  never needed it. One less red flag for F-Droid.
+- The web page's Start button and the `/start` and `/events` endpoints are gone: the server
+  only exists while a session runs, so remote start could never do anything. Stop, status
+  and preview remain.
+- The app has its own launcher and notification icons instead of borrowing a system drawable
+  that varies per manufacturer.
+- The exported ffmpeg command for an unrenamed session now suggests an output path beside
+  the actual frames rather than in a folder that may not exist.
+
+### Internal
+- HTTP request parsing moved to :core and unit-tested; new tests cover the locale bug,
+  the stale battery read, capture attribution and live webhook config.
+- Dead code removed (`/start` plumbing, unused probes and helpers left from early phases).
+- A GitHub Actions workflow runs :core:test and assembles the debug APK on every push.
+
 ## 0.3.0
 
 First public release.

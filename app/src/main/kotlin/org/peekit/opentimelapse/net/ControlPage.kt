@@ -27,8 +27,7 @@ object ControlPage {
           border: 1px solid rgba(128,128,128,.5); background: transparent; color: inherit; }
   button { padding: .7rem 1.2rem; font-size: 1rem; border-radius: 8px; border: none; cursor: pointer;
            margin-right: .5rem; }
-  .start { background: #5b4bd6; color: #fff; }
-  .stop { background: transparent; border: 1px solid #5b4bd6; color: #5b4bd6; }
+  .stop { background: #5b4bd6; color: #fff; }
   img { max-width: 100%; border-radius: 8px; margin-top: .5rem; display: none; }
   .muted { opacity: .6; font-size: .85rem; }
 </style>
@@ -52,7 +51,6 @@ object ControlPage {
 </div>
 
 <div class="card">
-  <button class="start" onclick="control('start')">Start</button>
   <button class="stop" onclick="control('stop')">Stop</button>
   <div><img id="preview" alt="last frame"></div>
   <p class="muted" id="msg"></p>

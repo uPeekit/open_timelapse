@@ -28,13 +28,17 @@ data class WebhookCall(
  * Charging state is part of the decision because level alone is ambiguous: a phone already
  * unplugged does not need telling to stop charging, and one already charging does not need
  * telling to start.
+ *
+ * The config is passed per reading, not held: the engine re-reads config every cycle, and
+ * the charging rules must not lag behind on a snapshot taken at session start. Only the
+ * hysteresis state lives here.
  */
-class ChargingThresholds(private val config: ChargingConfig) {
+class ChargingThresholds {
 
     private var armedForLow = true
     private var armedForHigh = true
 
-    fun onReading(reading: BatteryReading): ChargingAction? {
+    fun onReading(reading: BatteryReading, config: ChargingConfig): ChargingAction? {
         if (!config.enabled) return null
 
         if (reading.percent >= config.highPercent && reading.charging) {
@@ -55,7 +59,7 @@ class ChargingThresholds(private val config: ChargingConfig) {
     }
 
     /** The call for an action, or null when the user has not configured a URL for it. */
-    fun callFor(action: ChargingAction): WebhookCall? = when (action) {
+    fun callFor(action: ChargingAction, config: ChargingConfig): WebhookCall? = when (action) {
         ChargingAction.START_CHARGING ->
             config.startChargingUrl.takeIf { it.isNotBlank() }
                 ?.let { WebhookCall(it, config.startMethod, config.startBody) }

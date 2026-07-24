@@ -164,6 +164,7 @@ class CycleRunner(
                 sinceMs = shutterAtMs,
                 timeoutMs = config.capture.captureTimeoutMs,
                 quietMs = config.capture.siblingQuietMs,
+                expectedOwner = config.shutter.packageName,
             )
             val confirmed = media.isNotEmpty()
             events.emit(

@@ -87,7 +87,7 @@ object NodeFinder {
                     ?: ShutterStrategy.CONTENT_DESCRIPTION,
                 node = scored.node,
                 detail = "detected by shape/position (score %.2f: %s)"
-                    .format(scored.score, scored.reasons.joinToString("; ")),
+                    .format(java.util.Locale.ROOT, scored.score, scored.reasons.joinToString("; ")),
             )
         }
 

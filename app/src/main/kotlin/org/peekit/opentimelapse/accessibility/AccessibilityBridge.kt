@@ -1,11 +1,7 @@
 package org.peekit.opentimelapse.accessibility
 
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -23,12 +19,8 @@ object AccessibilityBridge {
     /** The live service, or null when the system has not bound it. Never cache the result. */
     val service: TimelapseAccessibilityService? get() = current.value
 
-    val serviceFlow: StateFlow<TimelapseAccessibilityService?> = current.asStateFlow()
-
-    val isConnected: Boolean get() = current.value != null
-
     /** For the Setup screen, which must reflect live state rather than what it last wrote. */
-    val connected: Flow<Boolean> = current.map { it != null }
+    val isConnected: Boolean get() = current.value != null
 
     internal fun register(service: TimelapseAccessibilityService) {
         current.value = service

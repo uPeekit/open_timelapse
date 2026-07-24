@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import org.peekit.opentimelapse.MainActivity
+import org.peekit.opentimelapse.R
 
 /** The persistent notification: current status, frames so far, and a Stop action. */
 class TimelapseNotification(private val context: Context) {
@@ -40,7 +41,7 @@ class TimelapseNotification(private val context: Context) {
         return Notification.Builder(context, CHANNEL_ID)
             .setContentTitle(if (frames > 0) "Timelapse - $frames frames" else "Timelapse")
             .setContentText(status)
-            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(open)

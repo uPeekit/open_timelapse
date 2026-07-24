@@ -143,6 +143,20 @@ class FfmpegCommandBuilderTest {
     }
 
     @Test
+    fun `concat durations use a decimal point whatever the device locale`() {
+        // A comma-decimal locale (German, Russian, ...) must not produce "duration 0,040000",
+        // which ffmpeg's concat demuxer rejects - every render would fail on those phones.
+        val saved = java.util.Locale.getDefault()
+        try {
+            java.util.Locale.setDefault(java.util.Locale.GERMANY)
+            val list = FfmpegCommandBuilder.concatList(listOf("/a/one.jpg"), fps = 25)
+            assertContains(list, "duration 0.040000")
+        } finally {
+            java.util.Locale.setDefault(saved)
+        }
+    }
+
+    @Test
     fun `quotes in a path cannot break out of the concat entry`() {
         val list = FfmpegCommandBuilder.concatList(listOf("/a/it's here.jpg"), fps = 30)
         // The shell idiom for a quote inside a single-quoted string: close, escape, reopen.

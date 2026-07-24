@@ -148,6 +148,23 @@ class TimelapseEngineTest {
     }
 
     @Test
+    fun `battery is re-checked after the interval wait so a long wait cannot go stale`() = runTest {
+        // The floor exists to leave charge in the phone; reading it before an hours-long
+        // wait and then shooting anyway defeats that.
+        val startedAt = time.now
+        actuator.batteryProvider = {
+            val drained = time.nowMs() >= startedAt + 25_000L
+            BatteryReading(percent = if (drained) 10 else 100, charging = false)
+        }
+        val executor = ScriptedExecutor(time)
+
+        val summary = engine(executor).runSession("s1") { config(intervalSeconds = 30) }
+
+        assertEquals(1, summary.cyclesRun, "the second frame must not be shot at 10%")
+        assertEquals(StopReason.BATTERY_LOW, summary.stopReason)
+    }
+
+    @Test
     fun `a low battery on the charger keeps shooting`() = runTest {
         // On a charger it is going up, not down - stopping would be wrong.
         actuator.batteryCharging = true

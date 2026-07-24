@@ -22,11 +22,14 @@ object FfmpegCommandBuilder {
      */
     fun concatList(framePaths: List<String>, fps: Int): String {
         val duration = 1.0 / fps.coerceAtLeast(1)
+        // Locale.ROOT: a comma-decimal device locale would emit "0,033333", which the
+        // concat demuxer rejects - every render failed on phones set to German or Russian.
+        val durationLine = "duration %.6f".format(java.util.Locale.ROOT, duration)
         return buildString {
             appendLine("ffconcat version 1.0")
             framePaths.forEach { path ->
                 appendLine("file '${escape(path)}'")
-                appendLine("duration %.6f".format(duration))
+                appendLine(durationLine)
             }
             // The last frame needs repeating; without it ffmpeg drops it.
             framePaths.lastOrNull()?.let { appendLine("file '${escape(it)}'") }

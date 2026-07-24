@@ -17,7 +17,7 @@ class ControlAuthTest {
 
     @Test
     fun `every data route needs the token, preview included`() {
-        for (route in listOf("/status", "/preview", "/events")) {
+        for (route in listOf("/status", "/preview")) {
             assertEquals(
                 Access.UNAUTHORIZED,
                 ControlAuth.evaluate(token, "GET", route, presentedToken = null),
@@ -34,7 +34,15 @@ class ControlAuthTest {
     fun `control routes need the token`() {
         assertEquals(Access.UNAUTHORIZED, ControlAuth.evaluate(token, "POST", "/stop", "wrong"))
         assertEquals(Access.ALLOW, ControlAuth.evaluate(token, "POST", "/stop", token))
-        assertEquals(Access.ALLOW, ControlAuth.evaluate(token, "POST", "/start", token))
+    }
+
+    @Test
+    fun `retired routes are gone, not lingering`() {
+        // /start could only ever reach an already-running session (the server lives inside
+        // the session), and /events had no client. Both were removed rather than left as
+        // attack surface.
+        assertEquals(Access.NOT_FOUND, ControlAuth.evaluate(token, "POST", "/start", token))
+        assertEquals(Access.NOT_FOUND, ControlAuth.evaluate(token, "GET", "/events", token))
     }
 
     @Test

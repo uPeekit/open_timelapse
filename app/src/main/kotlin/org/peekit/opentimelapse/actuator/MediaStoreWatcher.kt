@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import kotlinx.coroutines.delay
+import org.peekit.opentimelapse.core.engine.CaptureAttribution
 import org.peekit.opentimelapse.core.engine.CapturedMedia
 
 /**
@@ -22,8 +23,17 @@ class MediaStoreWatcher(private val context: Context) {
      * Waits for media written after [sinceMs], then keeps collecting for [quietMs] after the
      * first arrival so a RAW sibling is grouped with its JPEG - one shutter press produces
      * two files in RAW mode and they must share a frame index.
+     *
+     * Files owned by [expectedOwner] are preferred over anything else that landed in the
+     * window - a messenger auto-download must not be counted, renamed, and later deleted as
+     * a frame. See [CaptureAttribution] for why this is a preference, not a hard filter.
      */
-    suspend fun awaitNewMedia(sinceMs: Long, timeoutMs: Long, quietMs: Long): List<CapturedMedia> {
+    suspend fun awaitNewMedia(
+        sinceMs: Long,
+        timeoutMs: Long,
+        quietMs: Long,
+        expectedOwner: String,
+    ): List<CapturedMedia> {
         val resolver = context.contentResolver
         val deadline = System.currentTimeMillis() + timeoutMs
 
@@ -38,7 +48,8 @@ class MediaStoreWatcher(private val context: Context) {
 
         // Let a RAW sibling land, then re-read so both files share one frame index.
         delay(quietMs)
-        return query(resolver, sinceMs).ifEmpty { found }
+        val settled = query(resolver, sinceMs).ifEmpty { found }
+        return CaptureAttribution.preferOwnedBy(settled, expectedOwner)
     }
 
     private fun query(resolver: ContentResolver, sinceMs: Long): List<CapturedMedia> {
@@ -54,7 +65,7 @@ class MediaStoreWatcher(private val context: Context) {
             MediaStore.MediaColumns.DATE_ADDED,
             @Suppress("DEPRECATION") MediaStore.MediaColumns.DATA,
         ) + if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            arrayOf(MediaStore.MediaColumns.RELATIVE_PATH)
+            arrayOf(MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.MediaColumns.OWNER_PACKAGE_NAME)
         } else {
             emptyArray()
         }
@@ -85,6 +96,11 @@ class MediaStoreWatcher(private val context: Context) {
                 @Suppress("DEPRECATION")
                 val pathColumn = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
                 val relativeColumn = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                val ownerColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    cursor.getColumnIndex(MediaStore.MediaColumns.OWNER_PACKAGE_NAME)
+                } else {
+                    -1
+                }
 
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idColumn)
@@ -99,6 +115,7 @@ class MediaStoreWatcher(private val context: Context) {
                         mimeType = cursor.getString(mimeColumn) ?: "application/octet-stream",
                         sizeBytes = size,
                         addedAtMs = cursor.getLong(addedColumn) * 1000,
+                        ownerPackage = if (ownerColumn >= 0) cursor.getString(ownerColumn) else null,
                     )
                 }
             }

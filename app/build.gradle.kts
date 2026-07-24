@@ -25,8 +25,8 @@ android {
         targetSdk = 35
         // Bump versionCode for every build you install over an older one; Android refuses
         // a downgrade. versionName is what humans read.
-        versionCode = 16
-        versionName = "0.3.0"
+        versionCode = 17
+        versionName = "0.4.0"
     }
 
     compileOptions {
@@ -34,9 +34,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    // The Phase 0 probe binary is a real ELF executable, not a library: it must be
-    // extracted to nativeLibraryDir at install time, which is the only directory an
-    // app is permitted to exec from since Android 10.
+    // The bundled ffmpeg is a real ELF executable, not a library: it must be extracted
+    // to nativeLibraryDir at install time, which is the only directory an app is
+    // permitted to exec from since Android 10.
     packaging {
         jniLibs {
             useLegacyPackaging = true

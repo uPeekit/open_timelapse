@@ -7,11 +7,13 @@ import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
 import org.peekit.opentimelapse.core.net.Access
 import org.peekit.opentimelapse.core.net.ControlAuth
+import org.peekit.opentimelapse.core.net.HttpRequest
 import org.peekit.opentimelapse.core.net.Route
 import org.peekit.opentimelapse.core.net.StatusSnapshot
 import org.peekit.opentimelapse.data.LogRepository
@@ -26,23 +28,22 @@ interface ControlBackend {
     /** Last confirmed frame, downscaled to a JPEG for the browser. Null if there is none yet. */
     fun previewJpeg(): ByteArray?
 
-    fun requestStart()
-
     fun requestStop()
 }
 
 /**
- * A hand-rolled HTTP/1.1 server for the four control endpoints, run inside the foreground
+ * A hand-rolled HTTP/1.1 server for the control endpoints, run inside the foreground
  * service so it lives exactly as long as a session and never has to be started from the
  * background.
  *
- * Hand-rolled rather than NanoHTTPD: four endpoints is ~a screen of parsing, and the app's
- * dependency list is short enough to be worth keeping that way. The parsing is deliberately
- * minimal - request line, headers, optional body - because the surface is a personal LAN
- * tool, not the open internet, and every request is gated by [ControlAuth] before any work.
+ * Hand-rolled rather than NanoHTTPD: three endpoints is ~a screen of parsing, and the app's
+ * dependency list is short enough to be worth keeping that way. The parsing lives in
+ * :core's [HttpRequest] so it is unit-tested; every request is gated by [ControlAuth]
+ * before any work.
  *
- * Threading: one accept loop, a small pool for connections. SSE ties up a thread per client,
- * so connections are capped.
+ * One instance serves one session: [start] then [stop], once each. The thread pool is
+ * created on start and shut down on stop - an earlier version leaked four threads per
+ * session by never shutting its pool down.
  */
 class ControlServer(
     private val backend: ControlBackend,
@@ -54,8 +55,7 @@ class ControlServer(
 
     @Volatile private var serverSocket: ServerSocket? = null
     @Volatile private var token: String = ""
-
-    private val pool = Executors.newFixedThreadPool(MAX_CONNECTIONS)
+    @Volatile private var pool: ExecutorService? = null
     private var acceptThread: Thread? = null
 
     /** The port actually bound, so mDNS and the UI advertise the truth. -1 until started. */
@@ -79,6 +79,9 @@ class ControlServer(
 
         serverSocket = socket
         boundPort = socket.localPort
+        pool = Executors.newFixedThreadPool(MAX_CONNECTIONS) { runnable ->
+            Thread(runnable, "control-worker").apply { isDaemon = true }
+        }
 
         acceptThread = Thread({ acceptLoop(socket) }, "control-accept").apply {
             isDaemon = true
@@ -92,6 +95,9 @@ class ControlServer(
         serverSocket = null
         boundPort = -1
         acceptThread = null
+        // shutdownNow, not shutdown: an in-flight response is worth less than the threads.
+        pool?.shutdownNow()
+        pool = null
     }
 
     private fun acceptLoop(socket: ServerSocket) {
@@ -103,7 +109,13 @@ class ControlServer(
                 if (running.get()) log.message("Control server accept failed: ${e.message}")
                 break
             }
-            pool.execute { handle(connection) }
+            val workers = pool
+            if (workers == null) {
+                runCatching { connection.close() }
+                break
+            }
+            runCatching { workers.execute { handle(connection) } }
+                .onFailure { runCatching { connection.close() } }
         }
     }
 
@@ -118,31 +130,18 @@ class ControlServer(
         }
     }
 
-    private data class Request(
-        val method: String,
-        val path: String,
-        val authorization: String?,
-    )
-
-    private fun parseRequest(reader: BufferedReader): Request? {
-        val requestLine = reader.readLine() ?: return null
-        val parts = requestLine.split(' ')
-        if (parts.size < 2) return null
-        val method = parts[0]
-        val path = parts[1]
-
-        var authorization: String? = null
+    private fun parseRequest(reader: BufferedReader): HttpRequest? {
+        val requestLine = reader.readLine()
+        val headers = mutableListOf<String>()
         while (true) {
             val line = reader.readLine() ?: break
             if (line.isEmpty()) break
-            if (line.startsWith("Authorization:", ignoreCase = true)) {
-                authorization = line.substringAfter(':').trim()
-            }
+            headers += line
         }
-        return Request(method, path, authorization)
+        return HttpRequest.parse(requestLine, headers)
     }
 
-    private fun route(request: Request, out: OutputStream) {
+    private fun route(request: HttpRequest, out: OutputStream) {
         val presented = ControlAuth.presentedToken(request.authorization, request.path)
         when (ControlAuth.evaluate(token, request.method, request.path, presented)) {
             Access.NOT_FOUND -> respond(out, 404, "text/plain", "Not found".toByteArray())
@@ -152,11 +151,11 @@ class ControlServer(
 
             Access.ALLOW_PUBLIC -> respond(out, 200, "text/html; charset=utf-8", ControlPage.HTML.toByteArray())
 
-            Access.ALLOW -> serve(Route.match(request.method, request.path), request, out)
+            Access.ALLOW -> serve(Route.match(request.method, request.path), out)
         }
     }
 
-    private fun serve(route: Route?, request: Request, out: OutputStream) {
+    private fun serve(route: Route?, out: OutputStream) {
         when (route) {
             Route.STATUS ->
                 respond(out, 200, "application/json", json.encodeToString(backend.status()).toByteArray())
@@ -170,51 +169,13 @@ class ControlServer(
                 }
             }
 
-            Route.START -> {
-                backend.requestStart()
-                respond(out, 200, "application/json", """{"ok":true}""".toByteArray())
-            }
-
             Route.STOP -> {
                 backend.requestStop()
                 respond(out, 200, "application/json", """{"ok":true}""".toByteArray())
             }
 
-            Route.EVENTS -> streamEvents(out)
-
             // PAGE is handled as ALLOW_PUBLIC; reaching here means an unmapped allowed route.
             else -> respond(out, 404, "text/plain", "Not found".toByteArray())
-        }
-    }
-
-    /**
-     * Server-sent events: push a status line about twice a second until the client hangs up.
-     * A dropped client surfaces as a write failure, which ends the loop and frees the thread.
-     */
-    private fun streamEvents(out: OutputStream) {
-        val header = buildString {
-            append("HTTP/1.1 200 OK\r\n")
-            append("Content-Type: text/event-stream\r\n")
-            append("Cache-Control: no-cache\r\n")
-            append("Connection: close\r\n")
-            append("\r\n")
-        }
-        out.write(header.toByteArray())
-        out.flush()
-
-        while (running.get()) {
-            val payload = json.encodeToString(backend.status())
-            try {
-                out.write("data: $payload\n\n".toByteArray())
-                out.flush()
-            } catch (e: Exception) {
-                break
-            }
-            try {
-                Thread.sleep(EVENT_INTERVAL_MS)
-            } catch (e: InterruptedException) {
-                break
-            }
         }
     }
 
@@ -246,6 +207,5 @@ class ControlServer(
     private companion object {
         const val MAX_CONNECTIONS = 4
         const val READ_TIMEOUT_MS = 15_000
-        const val EVENT_INTERVAL_MS = 500L
     }
 }

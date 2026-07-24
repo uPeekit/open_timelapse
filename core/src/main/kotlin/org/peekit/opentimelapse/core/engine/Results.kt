@@ -40,6 +40,8 @@ data class CapturedMedia(
     val mimeType: String,
     val sizeBytes: Long,
     val addedAtMs: Long,
+    /** Package that wrote the row (OWNER_PACKAGE_NAME), null where the OS does not track it. */
+    val ownerPackage: String? = null,
 )
 
 data class FrameFileResult(

@@ -1,28 +1,39 @@
 package org.peekit.opentimelapse
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import org.peekit.opentimelapse.core.model.SessionManifest
 import org.peekit.opentimelapse.core.model.TimelapseConfig
 import org.peekit.opentimelapse.core.render.RenderSpec
+import org.peekit.opentimelapse.data.RenderPhase
 import org.peekit.opentimelapse.render.RenderService
 import org.peekit.opentimelapse.service.TimelapseService
+import org.peekit.opentimelapse.ui.LicensesActivity
 import org.peekit.opentimelapse.ui.MainActions
 import org.peekit.opentimelapse.ui.MainScreen
+import org.peekit.opentimelapse.ui.SessionActions
 import org.peekit.opentimelapse.ui.SetupCheck
 import org.peekit.opentimelapse.ui.SetupChecks
 
@@ -31,7 +42,7 @@ class MainActivity : ComponentActivity() {
     private val app by lazy { application as TimelapseApp }
 
     private var checks by mutableStateOf<List<SetupCheck>>(emptyList())
-    private var sessions by mutableStateOf<List<org.peekit.opentimelapse.core.model.SessionManifest>>(emptyList())
+    private var sessions by mutableStateOf<List<SessionManifest>>(emptyList())
 
     private val requestPermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -51,13 +62,11 @@ class MainActivity : ComponentActivity() {
                 // Open the finished video once per completion, when asked. rememberSaveable
                 // survives a rotation so it does not reopen; a completionId only advances on a
                 // genuinely new render.
-                var lastOpened by androidx.compose.runtime.saveable.rememberSaveable {
-                    mutableStateOf(0L)
-                }
-                androidx.compose.runtime.LaunchedEffect(render.completionId, config.openVideoAfterRender) {
+                var lastOpened by rememberSaveable { mutableStateOf(0L) }
+                LaunchedEffect(render.completionId, config.openVideoAfterRender) {
                     val id = render.completionId
                     if (id > lastOpened &&
-                        render.phase == org.peekit.opentimelapse.data.RenderPhase.SUCCESS &&
+                        render.phase == RenderPhase.SUCCESS &&
                         config.openVideoAfterRender &&
                         render.outputUri != null
                     ) {
@@ -95,7 +104,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onOpenLicenses = {
-                                startActivity(Intent(this@MainActivity, org.peekit.opentimelapse.ui.LicensesActivity::class.java))
+                                startActivity(Intent(this@MainActivity, LicensesActivity::class.java))
                             },
                             onTestWebhook = { action ->
                                 lifecycleScope.launch {
@@ -127,7 +136,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun sessionActions() = org.peekit.opentimelapse.ui.SessionActions(
+    private fun sessionActions() = SessionActions(
         onRender = { session ->
             lifecycleScope.launch {
                 val stored = app.configRepository.current().customRenderCommand
@@ -151,19 +160,19 @@ class MainActivity : ComponentActivity() {
 
     private fun openVideo(uriString: String) {
         val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(android.net.Uri.parse(uriString), "video/mp4")
+            setDataAndType(Uri.parse(uriString), "video/mp4")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         runCatching { startActivity(intent) }
             .onFailure { app.log.message("No app available to open the video") }
     }
 
-    private fun copyCommand(session: org.peekit.opentimelapse.core.model.SessionManifest) {
+    private fun copyCommand(session: SessionManifest) {
         lifecycleScope.launch {
             val export = app.sessionExporter.export(session, RenderSpec()) ?: return@launch
-            val clipboard = getSystemService(android.content.ClipboardManager::class.java)
+            val clipboard = getSystemService(ClipboardManager::class.java)
             clipboard?.setPrimaryClip(
-                android.content.ClipData.newPlainText("ffmpeg command", export.command)
+                ClipData.newPlainText("ffmpeg command", export.command)
             )
             app.log.message("ffmpeg command copied to clipboard")
         }
@@ -171,7 +180,7 @@ class MainActivity : ComponentActivity() {
 
     private fun shareLog() {
         val file = app.log.exportFile() ?: return
-        val uri = androidx.core.content.FileProvider.getUriForFile(
+        val uri = FileProvider.getUriForFile(
             this,
             "$packageName.fileprovider",
             file,
@@ -193,8 +202,8 @@ class MainActivity : ComponentActivity() {
                 runCatching {
                     startActivity(
                         Intent(
-                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                            android.net.Uri.parse("package:$packageName"),
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:$packageName"),
                         )
                     )
                 }

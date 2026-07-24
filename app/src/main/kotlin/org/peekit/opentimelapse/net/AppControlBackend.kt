@@ -49,10 +49,6 @@ class AppControlBackend(
         return runCatching { downscaleToJpeg(path) }.getOrNull()
     }
 
-    override fun requestStart() {
-        TimelapseService.send(context, TimelapseService.ACTION_START)
-    }
-
     override fun requestStop() {
         TimelapseService.send(context, TimelapseService.ACTION_STOP)
     }

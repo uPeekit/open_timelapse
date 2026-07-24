@@ -11,7 +11,11 @@ import kotlinx.serialization.Serializable
 data class SessionManifest(
     val id: String,
     val name: String,
-    /** Absolute path of the session folder, or the camera's own folder when naming is off. */
+    /**
+     * Absolute path of the session's own folder. Always the app's session folder, even when
+     * naming is off - unrenamed frames stay in the camera's folder and are reached through
+     * [framePaths], never through this.
+     */
     val folderPath: String,
     val cameraPackage: String,
     val intervalSeconds: Int,

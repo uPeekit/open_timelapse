@@ -16,10 +16,6 @@ class ScreenState(private val context: Context) {
 
     fun isOn(): Boolean = displayState() == Display.STATE_ON
 
-    fun isDozing(): Boolean = displayState().let {
-        it == Display.STATE_DOZE || it == Display.STATE_DOZE_SUSPEND
-    }
-
     fun describe(): String = when (displayState()) {
         Display.STATE_ON -> "on"
         Display.STATE_OFF -> "off"

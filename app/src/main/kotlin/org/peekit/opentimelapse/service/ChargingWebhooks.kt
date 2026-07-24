@@ -25,6 +25,10 @@ import org.peekit.opentimelapse.data.LogRepository
  * Lives only as long as a session: registered when one starts, unregistered when it ends.
  * That keeps a battery watcher from running permanently and costs nothing between shoots.
  *
+ * The config is read per battery reading, not snapshotted at session start: the engine
+ * applies Settings edits on the next cycle, and the webhooks must not lag behind on a
+ * stale copy - including being switched on mid-session.
+ *
  * Every failure is logged and swallowed. A socket that did not switch is a nuisance; a
  * session that stopped because of it would be a lost timelapse.
  */
@@ -35,19 +39,18 @@ class ChargingWebhooks(
 ) {
 
     private var receiver: BroadcastReceiver? = null
-    private var thresholds: ChargingThresholds? = null
 
-    fun start(config: ChargingConfig) {
-        if (!config.enabled) return
+    fun start(configSource: () -> ChargingConfig) {
         stop()
 
-        val rules = ChargingThresholds(config)
-        thresholds = rules
-
+        val rules = ChargingThresholds()
         val listener = object : BroadcastReceiver() {
             override fun onReceive(receivedContext: Context?, intent: Intent?) {
                 val reading = intent?.toReading() ?: return
-                rules.onReading(reading)?.let { action -> fire(action, rules, config, reading) }
+                val config = configSource()
+                rules.onReading(reading, config)?.let { action ->
+                    fire(action, rules, config, reading)
+                }
             }
         }
         receiver = listener
@@ -56,18 +59,22 @@ class ChargingWebhooks(
         runCatching {
             context.registerReceiver(listener, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         }
-        log.message("Charging control on: below ${config.lowPercent}% charge, above ${config.highPercent}% stop")
+        val config = configSource()
+        if (config.enabled) {
+            log.message(
+                "Charging control on: below ${config.lowPercent}% charge, above ${config.highPercent}% stop"
+            )
+        }
     }
 
     fun stop() {
         receiver?.let { runCatching { context.unregisterReceiver(it) } }
         receiver = null
-        thresholds = null
     }
 
     /** Sends one webhook now, so a setup can be checked without draining a real battery. */
     fun test(config: ChargingConfig, action: ChargingAction) {
-        val call = ChargingThresholds(config).callFor(action)
+        val call = ChargingThresholds().callFor(action, config)
         if (call == null) {
             log.message("No URL configured for $action")
             return
@@ -81,7 +88,7 @@ class ChargingWebhooks(
         config: ChargingConfig,
         reading: BatteryReading,
     ) {
-        val call = rules.callFor(action) ?: run {
+        val call = rules.callFor(action, config) ?: run {
             log.message("$action at ${reading.percent}% but no URL is configured")
             return
         }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the accent of the control page, so the app reads as one thing. -->
+    <color name="ic_launcher_background">#5B4BD6</color>
+</resources>

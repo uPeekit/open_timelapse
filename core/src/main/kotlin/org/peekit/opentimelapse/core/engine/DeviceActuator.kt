@@ -36,8 +36,16 @@ interface DeviceActuator {
      * Waits for files the camera wrote after [sinceMs], returning once one has appeared and
      * then no further sibling arrives for [quietMs]. Empty list means nothing was captured
      * within [timeoutMs].
+     *
+     * [expectedOwner] is the camera package; files it owns are preferred over anything else
+     * that happened to land in the window - see [CaptureAttribution].
      */
-    suspend fun awaitNewMedia(sinceMs: Long, timeoutMs: Long, quietMs: Long): List<CapturedMedia>
+    suspend fun awaitNewMedia(
+        sinceMs: Long,
+        timeoutMs: Long,
+        quietMs: Long,
+        expectedOwner: String,
+    ): List<CapturedMedia>
 
     suspend fun lockScreen(): StepResult
 

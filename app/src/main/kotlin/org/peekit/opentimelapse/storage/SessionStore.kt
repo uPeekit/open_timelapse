@@ -6,6 +6,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import org.peekit.opentimelapse.core.model.SessionManifest
@@ -29,6 +31,13 @@ class SessionStore(
 ) {
 
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
+
+    /**
+     * Serializes manifest writes: the periodic mid-session flush runs on its own coroutine
+     * and could otherwise interleave with the final write at session end, leaving a torn
+     * or stale file for exactly the crash the flush exists to survive.
+     */
+    private val writeLock = Mutex()
 
     private val privateDir: File
         get() = File(context.filesDir, "sessions").apply { if (!exists()) mkdirs() }
@@ -78,16 +87,18 @@ class SessionStore(
      * leaves a renderable session rather than an orphaned pile of images.
      */
     suspend fun save(manifest: SessionManifest) = withContext(Dispatchers.IO) {
-        val document = json.encodeToString(manifest)
+        writeLock.withLock {
+            val document = json.encodeToString(manifest)
 
-        runCatching { File(privateDir, "${manifest.id}.json").writeText(document) }
-            .onFailure { Logcat.i("could not record session ${manifest.id}: ${it.message}") }
+            runCatching { File(privateDir, "${manifest.id}.json").writeText(document) }
+                .onFailure { Logcat.i("could not record session ${manifest.id}: ${it.message}") }
 
-        // Best effort: needs All-files access, and its absence must not fail the session.
-        runCatching {
-            val folder = File(manifest.folderPath)
-            if (folder.isDirectory || folder.mkdirs()) {
-                File(folder, MANIFEST_NAME).writeText(document)
+            // Best effort: needs All-files access, and its absence must not fail the session.
+            runCatching {
+                val folder = File(manifest.folderPath)
+                if (folder.isDirectory || folder.mkdirs()) {
+                    File(folder, MANIFEST_NAME).writeText(document)
+                }
             }
         }
         Unit

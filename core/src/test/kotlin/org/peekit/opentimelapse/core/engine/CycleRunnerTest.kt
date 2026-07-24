@@ -256,6 +256,13 @@ class CycleRunnerTest {
     }
 
     @Test
+    fun `capture verification is told which app owns the expected file`() = runTest {
+        runner().run(config(), frameIndex = 1)
+
+        assertEquals(CAMERA, actuator.lastMediaOwner, "the watcher needs the camera package to reject stray images")
+    }
+
+    @Test
     fun `raw plus jpeg from one press share the frame index`() = runTest {
         actuator.media = listOf(jpeg(), dng())
 

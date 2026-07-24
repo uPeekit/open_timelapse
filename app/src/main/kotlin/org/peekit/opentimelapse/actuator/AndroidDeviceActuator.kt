@@ -105,11 +105,13 @@ class AndroidDeviceActuator(
             }
         }
 
-        val how = service.clickAt(resolved.bounds)
+        // ok reflects the dispatch, not a guess: an undispatched click reported as success
+        // would count a frame that was never taken when verification is off.
+        val click = service.clickAt(resolved.bounds)
         return ShutterResult(
-            ok = true,
+            ok = click.dispatched,
             strategy = resolved.strategy,
-            detail = "${resolved.detail}; clicked via $how",
+            detail = "${resolved.detail}; ${click.how}",
         )
     }
 
@@ -117,7 +119,8 @@ class AndroidDeviceActuator(
         sinceMs: Long,
         timeoutMs: Long,
         quietMs: Long,
-    ): List<CapturedMedia> = media.awaitNewMedia(sinceMs, timeoutMs, quietMs)
+        expectedOwner: String,
+    ): List<CapturedMedia> = media.awaitNewMedia(sinceMs, timeoutMs, quietMs, expectedOwner)
 
     override suspend fun battery(): BatteryReading = batteryNow()
 
@@ -138,11 +141,11 @@ class AndroidDeviceActuator(
         val scale = status.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
         if (level < 0 || scale <= 0) return BatteryReading(percent = 100, charging = true)
 
-        val plugged = status.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+        val chargeStatus = status.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
         return BatteryReading(
             percent = level * 100 / scale,
-            charging = plugged == BatteryManager.BATTERY_STATUS_CHARGING ||
-                plugged == BatteryManager.BATTERY_STATUS_FULL,
+            charging = chargeStatus == BatteryManager.BATTERY_STATUS_CHARGING ||
+                chargeStatus == BatteryManager.BATTERY_STATUS_FULL,
         )
     }
 

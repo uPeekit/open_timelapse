@@ -95,19 +95,6 @@ class FfmpegRunner(private val context: Context) {
         }
     }
 
-    /** Reports the build's version and configuration, for the diagnostics screen. */
-    suspend fun version(): String? = withContext(Dispatchers.IO) {
-        val binary = binary() ?: return@withContext null
-        runCatching {
-            val process = ProcessBuilder(binary.absolutePath, "-version")
-                .redirectErrorStream(true)
-                .start()
-            val text = process.inputStream.bufferedReader().readText()
-            process.waitFor()
-            text.lineSequence().firstOrNull()
-        }.getOrNull()
-    }
-
     private companion object {
         const val BINARY_NAME = "libffmpeg.so"
         const val MAX_LOG_LINES = 40

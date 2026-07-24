@@ -51,6 +51,17 @@ class SessionExporter(private val context: Context) {
     private fun exportDir(): File =
         File(context.filesDir, "exports").apply { if (!exists()) mkdirs() }
 
-    private fun defaultOutput(manifest: SessionManifest): String =
-        "${manifest.folderPath}/${manifest.name}.mp4"
+    /**
+     * A renamed session's folder really exists, so the video lands beside its frames. An
+     * unrenamed session's folder may never have been created - suggest the folder of the
+     * first frame instead, which is where the camera's photos actually are.
+     */
+    private fun defaultOutput(manifest: SessionManifest): String {
+        val folder = if (manifest.isRenderable) {
+            manifest.folderPath
+        } else {
+            manifest.framePaths.firstOrNull()?.let { File(it).parent } ?: manifest.folderPath
+        }
+        return "$folder/${manifest.name}.mp4"
+    }
 }

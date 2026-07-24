@@ -34,8 +34,6 @@ enum class Route(val method: String, val path: String) {
     PAGE("GET", "/"),
     STATUS("GET", "/status"),
     PREVIEW("GET", "/preview"),
-    EVENTS("GET", "/events"),
-    START("POST", "/start"),
     STOP("POST", "/stop");
 
     companion object {

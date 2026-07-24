@@ -31,14 +31,6 @@ class CameraResolver(private val context: Context) {
             .firstOrNull { it != CHOOSER && it != context.packageName }
     }
 
-    /** Every app that can take a picture, for the Settings picker. */
-    fun candidates(): List<String> =
-        context.packageManager
-            .queryIntentActivities(Intent(MediaStore.ACTION_IMAGE_CAPTURE), 0)
-            .map { it.activityInfo.packageName }
-            .distinct()
-            .filter { it != CHOOSER && it != context.packageName }
-
     private companion object {
         const val CHOOSER = "android"
     }

@@ -25,7 +25,8 @@ Play policy reserves for accessibility. Sideload it, or publish through F-Droid.
   band over a multi-day shoot. Method and body are set per direction. Off by default.
 - **Check it from a laptop.** An optional local web page — status, a live preview, and a
   Stop button — served on your wi-fi only while a session runs, protected by a token you
-  pair once by QR. Off by default.
+  pair once by QR. Off by default. The page is plain http, so the token travels in the
+  clear on your own network — treat the wi-fi itself as the trust boundary.
 - **On-device rendering.** A bundled ffmpeg turns the frames into an mp4 without a PC; the
   exact command is shown and editable, or copyable for a desktop render.
 
@@ -41,7 +42,6 @@ into charging control, or from a laptop you point at the local page.
 | `INTERNET` | Only for charging control (a URL you configure) and the local page. Both are off by default. |
 | `READ_MEDIA_IMAGES` / `READ_EXTERNAL_STORAGE` | Read back the photo the camera just wrote, to confirm each frame actually landed. |
 | `MANAGE_EXTERNAL_STORAGE` | Only when *Rename frames* is on — renaming a file the camera app owns is impossible otherwise on Android 11+. Never requested unless you enable naming. |
-| `QUERY_ALL_PACKAGES` | List installed camera apps so you can pick one; also resolves the default via `IMAGE_CAPTURE`. |
 | Exact alarms, wake lock, battery-optimisation exemption | Fire each interval on time with the screen off; doze would otherwise defer them. |
 | Foreground service (special-use, media-processing) | Keep the session and the render alive with the screen off. |
 | `POST_NOTIFICATIONS` | The ongoing notification showing status and a Stop button. |

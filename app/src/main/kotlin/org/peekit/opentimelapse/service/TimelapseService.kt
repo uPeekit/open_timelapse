@@ -32,6 +32,11 @@ import org.peekit.opentimelapse.core.model.CycleMode
 import org.peekit.opentimelapse.core.model.SessionManifest
 import org.peekit.opentimelapse.core.model.StartTrigger
 import org.peekit.opentimelapse.core.model.TimelapseConfig
+import org.peekit.opentimelapse.core.net.ServerState
+import org.peekit.opentimelapse.net.AppControlBackend
+import org.peekit.opentimelapse.net.ControlServer
+import org.peekit.opentimelapse.net.LocalNetwork
+import org.peekit.opentimelapse.net.NsdRegistration
 import org.peekit.opentimelapse.storage.FileFrameStore
 import java.io.File
 
@@ -52,11 +57,14 @@ class TimelapseService : Service() {
 
     private var sessionJob: Job? = null
     private var engine: TimelapseEngine? = null
+
+    /** Mutated by the engine's event sink, read by notification code on other threads. */
+    @Volatile
     private var framesCaptured = 0
 
     private val charging get() = app.charging
-    private var controlServer: org.peekit.opentimelapse.net.ControlServer? = null
-    private var nsd: org.peekit.opentimelapse.net.NsdRegistration? = null
+    private var controlServer: ControlServer? = null
+    private var nsd: NsdRegistration? = null
 
     /** Kept so the mandatory startForeground() at the top of onStartCommand says something true. */
     @Volatile
@@ -120,9 +128,10 @@ class TimelapseService : Service() {
                 app.configRepository.config.collect { liveConfig = it }
             }
             // Session-scoped on purpose: a battery watcher that outlived the shoot would
-            // switch the user's socket while they were just using the phone.
+            // switch the user's socket while they were just using the phone. The config is
+            // read per battery event, so enabling or editing webhooks mid-session applies.
             if (!singleCycle) {
-                charging.start(liveConfig.charging)
+                charging.start { liveConfig.charging }
                 startControlServer(liveConfig)
             }
 
@@ -306,6 +315,7 @@ class TimelapseService : Service() {
             sinceMs = since,
             timeoutMs = timeoutMs,
             quietMs = liveConfig.capture.siblingQuietMs,
+            expectedOwner = liveConfig.shutter.packageName,
         )
         if (media.isEmpty()) {
             report("No photo taken within ${liveConfig.session.manualShotTimeoutMinutes} minutes - stopping.")
@@ -379,28 +389,29 @@ class TimelapseService : Service() {
 
         app.runState.update {
             it.copy(
-                serverState = org.peekit.opentimelapse.core.net.ServerState.RUNNING,
+                serverState = ServerState.RUNNING,
                 intervalSeconds = config.intervalSeconds,
                 startedAtMs = System.currentTimeMillis(),
             )
         }
 
-        val backend = org.peekit.opentimelapse.net.AppControlBackend(this, app.actuator, app.runState)
-        val server = org.peekit.opentimelapse.net.ControlServer(backend, app.log)
+        val backend = AppControlBackend(this, app.actuator, app.runState)
+        val server = ControlServer(backend, app.log)
         server.start(config.network.token, config.network.port)
         controlServer = server
 
         val port = server.boundPort
         if (port <= 0) {
             controlServer = null
+            app.runState.reset()
             return
         }
 
-        val registration = org.peekit.opentimelapse.net.NsdRegistration(this, app.log)
+        val registration = NsdRegistration(this, app.log)
         registration.register(port)
         nsd = registration
 
-        val ip = org.peekit.opentimelapse.net.LocalNetwork.ipv4Address()
+        val ip = LocalNetwork.ipv4Address()
         if (ip != null) {
             app.log.message("Control server live at http://$ip:$port - scan the QR in the app to pair")
         } else {
@@ -529,7 +540,7 @@ class TimelapseService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    /** Frame filing arrives in Phase 4; until then frames keep the camera's own names. */
+    /** Store for sessions that keep the camera's own filenames: files nothing, moves nothing. */
     private object NoOpFrameStore : FrameStore {
         override suspend fun fileFrame(media: List<CapturedMedia>, index: Int) =
             // Unused for path selection - CycleRunner skips the store when naming is off -

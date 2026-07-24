@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # JDK 21: newer JDKs break this Gradle version's toolchain parsing.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The engine's behaviour lives in :core; assembling :app protects the
+      # "core stays pure Kotlin" split mechanically.
+      - name: Unit tests
+        run: ./gradlew :core:test
+
+      - name: Assemble debug APK
+        run: ./gradlew :app:assembleDebug
