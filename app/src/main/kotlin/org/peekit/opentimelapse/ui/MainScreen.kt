@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -14,6 +15,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -57,8 +62,7 @@ fun MainScreen(
     ) {
         Text("OpenTimelapse", style = MaterialTheme.typography.headlineSmall)
 
-        CalibrationSection(config, actions)
-        SetupSection(checks, actions.onFix)
+        SetupSection(checks, config, actions)
         ControlsSection(blocking.isEmpty(), actions)
         SettingsSection(config, actions.onConfigChange)
         PowerSection(config, actions.onConfigChange, actions.onTestWebhook)
@@ -82,85 +86,92 @@ fun MainScreen(
 }
 
 /**
- * Offered before the first run rather than done silently: it shoots a few real frames,
- * which takes about a minute and is a surprise if the user is trying to catch something
- * happening right now.
+ * Setup and calibration in one collapsible card. It takes a lot of vertical space and is only
+ * interesting until everything is green, so once it is all OK it folds to a single "Setup - OK"
+ * line; anything still needing attention keeps it open. Calibration lives here as one more item
+ * rather than its own card, since it is just another thing to get right before the first shoot.
  */
 @Composable
-private fun CalibrationSection(config: TimelapseConfig, actions: MainActions) {
-    val state = config.calibration
-    val stale = state.completed && state.cameraPackage != config.shutter.packageName
+private fun SetupSection(checks: List<SetupCheck>, config: TimelapseConfig, actions: MainActions) {
+    val cal = config.calibration
+    val stale = cal.completed && cal.cameraPackage != config.shutter.packageName
+    val calibrated = cal.completed && !stale
+    // "settled" = done, or deliberately skipped: either way it should not keep the card open.
+    val calSettled = calibrated || cal.declined
+
+    val allOk = checks.all { it.satisfied } && calSettled
+    // Follows the state: collapses when everything is green, re-opens if something regresses -
+    // while still letting the user tap to peek either way.
+    var expanded by remember(allOk) { mutableStateOf(!allOk) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Calibration", style = MaterialTheme.typography.titleMedium)
-
-            when {
-                stale -> {
-                    Text(
-                        "Calibrated for a different camera app. Timings do not carry over - " +
-                            "run it again for ${config.shutter.packageName}.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Button(onClick = actions.onCalibrate) { Text("Calibrate again") }
-                }
-
-                state.completed -> Text(
-                    "Done. Shortest safe interval on this phone: ${state.minIntervalSeconds}s.",
-                    style = MaterialTheme.typography.bodySmall,
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    if (allOk) "Setup - OK" else "Setup",
+                    style = MaterialTheme.typography.titleMedium,
                 )
+                Text(if (expanded) "▲" else "▼", style = MaterialTheme.typography.titleMedium)
+            }
 
-                else -> {
-                    Text(
-                        "Every phone is different - how long the screen takes to accept a tap, " +
-                            "how long the camera takes to save a photo. Calibration measures " +
-                            "yours by shooting a few frames. It takes about a minute and the " +
-                            "photos are left in your camera roll.",
-                        style = MaterialTheme.typography.bodySmall,
+            if (expanded) {
+                checks.forEach { check ->
+                    SetupItem(
+                        mark = if (check.satisfied) "OK  " else if (check.required) "!!  " else "--  ",
+                        title = check.title,
+                        detail = check.detail,
+                        action = if (!check.satisfied && check.fix != null) {
+                            { OutlinedButton(onClick = { actions.onFix(check) }) { Text("Fix") } }
+                        } else {
+                            null
+                        },
                     )
-                    if (state.declined) {
-                        Text(
-                            "Skipped - the defaults may drop frames on this device.",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = actions.onCalibrate) { Text("Calibrate now") }
-                        if (!state.declined) {
-                            OutlinedButton(onClick = actions.onDeclineCalibration) { Text("Later") }
-                        }
-                    }
                 }
+
+                SetupItem(
+                    mark = if (calibrated) "OK  " else if (cal.declined) "--  " else "!!  ",
+                    title = "Calibration",
+                    detail = when {
+                        stale -> "Calibrated for another camera - recalibrate for ${config.shutter.packageName}."
+                        calibrated -> "Done. Shortest safe interval on this phone: ${cal.minIntervalSeconds}s."
+                        cal.declined -> "Skipped - the defaults may drop frames on this device."
+                        else -> "Measures how long this phone's screen and camera take, by shooting a " +
+                            "few frames (about a minute; the photos stay in your camera roll)."
+                    },
+                    action = if (!calibrated) {
+                        {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = actions.onCalibrate) { Text("Calibrate") }
+                                if (!cal.completed && !cal.declined) {
+                                    OutlinedButton(onClick = actions.onDeclineCalibration) { Text("Later") }
+                                }
+                            }
+                        }
+                    } else {
+                        null
+                    },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun SetupSection(checks: List<SetupCheck>, onFix: (SetupCheck) -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Setup", style = MaterialTheme.typography.titleMedium)
-
-            checks.forEach { check ->
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = (if (check.satisfied) "OK  " else if (check.required) "!!  " else "--  ") + check.title,
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(check.detail, style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (!check.satisfied && check.fix != null) {
-                        OutlinedButton(onClick = { onFix(check) }) { Text("Fix") }
-                    }
-                }
-            }
+private fun SetupItem(mark: String, title: String, detail: String, action: (@Composable () -> Unit)?) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(mark + title, style = MaterialTheme.typography.bodyLarge)
+            Text(detail, style = MaterialTheme.typography.bodySmall)
         }
+        action?.invoke()
     }
 }
 
@@ -185,7 +196,7 @@ private fun ControlsSection(canStart: Boolean, actions: MainActions) {
                 Button(onClick = actions.onStart, enabled = canStart) { Text("Start") }
                 OutlinedButton(onClick = actions.onStop) { Text("Stop") }
                 OutlinedButton(onClick = actions.onSingleCycle, enabled = canStart) {
-                    Text("One frame")
+                    Text("Test shot")
                 }
             }
         }

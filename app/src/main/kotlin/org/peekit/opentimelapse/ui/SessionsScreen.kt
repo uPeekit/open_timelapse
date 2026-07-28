@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.peekit.opentimelapse.core.model.SessionManifest
+import org.peekit.opentimelapse.core.model.humanDuration
 import org.peekit.opentimelapse.data.RenderPhase
 import org.peekit.opentimelapse.data.RenderState
 import java.text.SimpleDateFormat
@@ -32,7 +33,6 @@ import java.util.concurrent.TimeUnit
 
 data class SessionActions(
     val onRender: (SessionManifest) -> Unit,
-    val onCopyCommand: (SessionManifest) -> Unit,
     val onDelete: (SessionManifest) -> Unit,
     val onDeletePhotos: (SessionManifest) -> Unit,
 )
@@ -98,9 +98,6 @@ private fun SessionRow(session: SessionManifest, render: RenderState, actions: S
             OutlinedButton(onClick = { actions.onRender(session) }, enabled = renderable && !rendering) {
                 Text("Render")
             }
-            OutlinedButton(onClick = { actions.onCopyCommand(session) }, enabled = renderable) {
-                Text("Copy ffmpeg")
-            }
             OutlinedButton(onClick = { actions.onDelete(session) }) {
                 Text("Delete")
             }
@@ -143,9 +140,17 @@ private fun summarise(session: SessionManifest): String {
     val frames = "${session.frameCount} frame${if (session.frameCount == 1) "" else "s"}"
     val naming = if (session.naming.enabled) "named ${session.naming.prefix}" else "original names"
     val started = SimpleDateFormat("d MMM HH:mm", Locale.getDefault()).format(Date(session.startedAtMs))
-    val length = session.endedAtMs?.let { end ->
+
+    // A session ended by the phone dying never got its endedAtMs written, so fall back to an
+    // estimate from the frames it did capture - otherwise the most interesting sessions (the
+    // ones that ran until the battery gave out) are the ones with no duration shown.
+    val endMs = session.endedAtMs
+        ?: session.takeIf { it.frameCount > 0 }
+            ?.let { it.startedAtMs + it.frameCount.toLong() * it.intervalSeconds * 1000L }
+    val length = endMs?.takeIf { it > session.startedAtMs }?.let { end ->
         val seconds = TimeUnit.MILLISECONDS.toSeconds(end - session.startedAtMs)
-        " over ${seconds / 60}m ${seconds % 60}s"
+        " over ${humanDuration(seconds)}"
     } ?: ""
+
     return "$frames, every ${session.intervalSeconds}s, $naming\n$started$length"
 }

@@ -1,6 +1,7 @@
 package org.peekit.opentimelapse.core.model
 
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 
@@ -36,4 +37,21 @@ object StopTime {
         val time = Instant.ofEpochMilli(epochMs).atZone(zone).toLocalTime()
         return time.hour to time.minute
     }
+
+    /**
+     * A full calendar date and time as an instant, so a stop can be days away - a time-of-day
+     * alone caps the shoot at the next 24 hours. [month] is 1-12.
+     */
+    fun atDateTime(
+        year: Int,
+        month: Int,
+        day: Int,
+        hour: Int,
+        minute: Int,
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): Long =
+        LocalDateTime.of(year, month.coerceIn(1, 12), day, hour.coerceIn(0, 23), minute.coerceIn(0, 59))
+            .atZone(zone)
+            .toInstant()
+            .toEpochMilli()
 }

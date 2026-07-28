@@ -51,7 +51,27 @@ class LogRepository(private val file: LogFile? = null) : EventSink {
 
     val log: StateFlow<List<LogEntry>> = entries.asStateFlow()
 
+    private var frames = 0
+
+    /**
+     * Only failures and unexpected events are logged; a healthy cycle is silent apart from a
+     * heartbeat every [FRAME_HEARTBEAT] frames. A line per step per frame was thousands of
+     * "OK WAKE / OK SHUTTER" over a long run - pure noise that buried the one line that
+     * mattered and rotated the persisted log's useful history out of the file.
+     */
     override fun emit(event: EngineEvent) {
+        when (event) {
+            is EngineEvent.StepStarted -> return                       // "WAKE..." progress
+            is EngineEvent.StepSkipped -> return                       // normal: already satisfied
+            is EngineEvent.StepFinished -> if (event.ok) return        // keep only failed steps
+            is EngineEvent.FrameCaptured -> {
+                frames++
+                if (frames % FRAME_HEARTBEAT != 0) return
+                append(LogEntry(event.atMs, "$frames frames captured", ok = true))
+                return
+            }
+            else -> Unit                                              // failures, slots, messages, session
+        }
         append(LogEntry(event.atMs, describe(event), okOf(event)))
     }
 
@@ -65,6 +85,7 @@ class LogRepository(private val file: LogFile? = null) : EventSink {
      */
     fun clear() {
         entries.value = emptyList()
+        frames = 0
         file?.append("──────── new session ────────")
     }
 
@@ -118,5 +139,6 @@ class LogRepository(private val file: LogFile? = null) : EventSink {
 
     private companion object {
         const val MAX_ENTRIES = 500
+        const val FRAME_HEARTBEAT = 25
     }
 }

@@ -13,6 +13,12 @@ class StopTimeTest {
     private fun at(text: String): Long = ZonedDateTime.parse(text).toInstant().toEpochMilli()
 
     @Test
+    fun `a full date and time can be days away`() {
+        val stop = StopTime.atDateTime(year = 2026, month = 7, day = 30, hour = 6, minute = 0, zone = zone)
+        assertEquals(at("2026-07-30T06:00:00+01:00[Europe/London]"), stop)
+    }
+
+    @Test
     fun `a time later today stays today`() {
         val now = at("2026-07-22T09:00:00+01:00[Europe/London]")
 

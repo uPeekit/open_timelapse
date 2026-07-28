@@ -23,6 +23,7 @@ import org.peekit.opentimelapse.TimelapseApp
 import org.peekit.opentimelapse.core.model.SessionManifest
 import org.peekit.opentimelapse.core.render.Encoder
 import org.peekit.opentimelapse.core.render.FfmpegCommandBuilder
+import org.peekit.opentimelapse.core.model.humanDuration
 import org.peekit.opentimelapse.core.render.RenderSpec
 
 /**
@@ -125,7 +126,7 @@ class RenderService : Service() {
             is RenderResult.Success -> {
                 val published = publish(output)
                 app.renderState.success(published.uri, "Rendered ${manifest.name}")
-                finish("Rendered to ${published.location} in ${result.elapsedMs / 1000}s")
+                finish("Rendered to ${published.location} in ${humanDuration(result.elapsedMs / 1000)}")
             }
 
             is RenderResult.Failure -> {

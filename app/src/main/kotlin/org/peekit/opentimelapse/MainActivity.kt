@@ -143,7 +143,6 @@ class MainActivity : ComponentActivity() {
                 RenderService.render(this@MainActivity, session.id, RenderSpec(customCommand = stored))
             }
         },
-        onCopyCommand = { session -> copyCommand(session) },
         onDelete = { session ->
             lifecycleScope.launch {
                 app.sessionStore.delete(session.id)
@@ -165,17 +164,6 @@ class MainActivity : ComponentActivity() {
         }
         runCatching { startActivity(intent) }
             .onFailure { app.log.message("No app available to open the video") }
-    }
-
-    private fun copyCommand(session: SessionManifest) {
-        lifecycleScope.launch {
-            val export = app.sessionExporter.export(session, RenderSpec()) ?: return@launch
-            val clipboard = getSystemService(ClipboardManager::class.java)
-            clipboard?.setPrimaryClip(
-                ClipData.newPlainText("ffmpeg command", export.command)
-            )
-            app.log.message("ffmpeg command copied to clipboard")
-        }
     }
 
     private fun shareLog() {

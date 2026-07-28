@@ -13,6 +13,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -211,31 +212,56 @@ private fun StopConditionSettings(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        EndMode.AT_TIME -> {
-            val stored = config.session.endAtEpochMs
-            val (hour, minute) = if (stored > 0) {
-                StopTime.hourAndMinute(stored)
-            } else {
-                6 to 0
-            }
-            BoundTextField(
-                // Locale.ROOT so the field always shows ASCII digits the parser below reads back.
-                value = "%02d:%02d".format(Locale.ROOT, hour, minute),
-                onValueChange = { typed ->
-                    val parts = typed.split(":")
-                    val h = parts.getOrNull(0)?.trim()?.toIntOrNull()
-                    val m = parts.getOrNull(1)?.trim()?.toIntOrNull()
-                    if (h != null && m != null) {
-                        // Stored as an instant: a time already past today means tomorrow.
-                        val at = StopTime.nextOccurrence(h, m, System.currentTimeMillis())
-                        onChange { it.copy(session = it.session.copy(endAtEpochMs = at)) }
-                    }
-                },
-                label = "Stop at (HH:MM)",
-                modifier = Modifier.fillMaxWidth(),
-            )
+        EndMode.AT_TIME -> StopAtDateTime(config.session.endAtEpochMs) { at ->
+            onChange { it.copy(session = it.session.copy(endAtEpochMs = at)) }
         }
 
         EndMode.MANUAL -> Unit
     }
+}
+
+/**
+ * A date *and* time to stop, not just a time of day: a time alone caps the shoot at the next
+ * 24 hours, but a windowsill timelapse can run for days. Native pickers - date, then time -
+ * because a keyboard date is fiddly and easy to enter wrong.
+ */
+@Composable
+private fun StopAtDateTime(storedMs: Long, onPicked: (Long) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Seed the pickers from the stored instant, or from tomorrow morning on a blank field.
+    val seed = java.util.Calendar.getInstance().apply {
+        if (storedMs > 0) timeInMillis = storedMs else { add(java.util.Calendar.DAY_OF_YEAR, 1); set(java.util.Calendar.HOUR_OF_DAY, 6); set(java.util.Calendar.MINUTE, 0) }
+    }
+
+    val label = remember(storedMs) {
+        if (storedMs > 0) {
+            java.text.SimpleDateFormat("EEE d MMM, HH:mm", Locale.getDefault()).format(java.util.Date(storedMs))
+        } else {
+            "Pick a date and time"
+        }
+    }
+
+    OutlinedButton(
+        onClick = {
+            android.app.DatePickerDialog(
+                context,
+                { _, year, month0, day ->
+                    android.app.TimePickerDialog(
+                        context,
+                        { _, hour, minute ->
+                            onPicked(StopTime.atDateTime(year, month0 + 1, day, hour, minute))
+                        },
+                        seed.get(java.util.Calendar.HOUR_OF_DAY),
+                        seed.get(java.util.Calendar.MINUTE),
+                        true,
+                    ).show()
+                },
+                seed.get(java.util.Calendar.YEAR),
+                seed.get(java.util.Calendar.MONTH),
+                seed.get(java.util.Calendar.DAY_OF_MONTH),
+            ).apply { datePicker.minDate = System.currentTimeMillis() }.show()
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("Stop at: $label") }
 }

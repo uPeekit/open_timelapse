@@ -498,8 +498,14 @@ class TimelapseService : Service() {
                     )
                 }
                 // Flushed periodically so a flat battery still leaves a renderable session.
+                // The flush carries endedAtMs = now (the last frame's time): if the phone dies
+                // outright, closeSession never runs to write it, and without this the session
+                // that ran until the battery gave out would show no duration at all.
                 if (framesCaptured % MANIFEST_FLUSH_EVERY == 0) {
-                    manifest?.let { record -> scope.launch { app.sessionStore.save(record) } }
+                    manifest?.let { record ->
+                        val flushed = record.copy(endedAtMs = app.clock.nowMs())
+                        scope.launch { app.sessionStore.save(flushed) }
+                    }
                 }
             }
 

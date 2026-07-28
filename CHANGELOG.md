@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.5.0
+
+### Added
+- The control page is a multi-device monitor: open it from one phone, then paste other phones'
+  pairing links to watch and stop them all on one page. Columns on a wide screen, a single
+  scroll on a narrow one. The fleet is remembered in the browser. No device-side changes.
+- "Stop at" now takes a full date and time, not just a time of day — a shoot can be scheduled
+  days out instead of being capped at the next 24 hours.
+
+### Changed
+- Setup and calibration are one collapsible section; once everything is green it folds to a
+  single "Setup - OK" line, and re-opens if anything needs attention.
+- "One frame" is now "Test shot".
+- The per-session "Copy ffmpeg" button is gone — the editable command in the Render command
+  section is the general one; the per-session command was too phone-specific to be useful.
+- A "Delete photos" button removes a session's frames as well as its record (0.4.x had only
+  metadata delete).
+
+### Fixed
+- **Render out-of-memory on large 4K timelapses.** `scale=W:-2` set the *width*, so a portrait
+  frame's short edge was blown up to a 3840x5120 (20 MP) frame and ffmpeg peaked near 2 GB — on
+  a budget phone the low-memory killer took the render with no error logged. The long edge is
+  now fit inside a box (scaling down only), the default is 1920, and `sliced-threads` stops
+  x264's memory scaling with the thread count. A 2845-frame render that failed now peaks
+  ~430 MB. Originals are untouched for a higher-resolution pass on a PC.
+- A session ended by the phone dying now shows a duration (estimated from its frames), and
+  durations read as "2h 19m 32s", not "8372s".
+- The log no longer records every successful frame — only failures and unexpected events, with
+  a heartbeat every 25 frames. A long shoot's log stays legible and its persisted history is no
+  longer flushed out by per-frame noise.
+
 ## 0.4.0
 
 Hardening release: everything found in the project's first external code review, fixed.
