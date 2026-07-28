@@ -80,17 +80,24 @@ class FfmpegCommandBuilderTest {
             argv[argv.indexOf("-threads") + 1].toInt() in 1..6,
             "thread cap should stay modest: ${argv[argv.indexOf("-threads") + 1]}",
         )
+        val x264Params = argv[argv.indexOf("-x264-params") + 1]
+        assertTrue(x264Params.contains("rc-lookahead="), "lookahead is the single biggest memory lever")
         assertTrue(
-            argv[argv.indexOf("-x264-params") + 1].contains("rc-lookahead="),
-            "lookahead is the single biggest memory lever",
+            x264Params.contains("sliced-threads=1"),
+            "sliced threads share one frame buffer; without it a 4K encode peaked near 2GB and was killed",
         )
         assertEquals("medium", argv[argv.indexOf("-preset") + 1], "slow keeps a ~50 frame lookahead")
     }
 
     @Test
-    fun `scaling forces an even height, which h264 requires`() {
+    fun `scaling fits the long edge in a box, scaling down with even dimensions`() {
+        // The long edge (whichever it is) becomes 1920, not the width - a portrait frame must
+        // not have its short edge blown up to 1920. force_divisible_by=2 keeps H.264 happy.
         val argv = FfmpegCommandBuilder.fromPattern(renamed, RenderSpec(longEdgePx = 1920), "/out.mp4")
-        assertEquals("scale=1920:-2:flags=lanczos", argv[argv.indexOf("-vf") + 1])
+        assertEquals(
+            "scale=w=1920:h=1920:force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos",
+            argv[argv.indexOf("-vf") + 1],
+        )
     }
 
     @Test

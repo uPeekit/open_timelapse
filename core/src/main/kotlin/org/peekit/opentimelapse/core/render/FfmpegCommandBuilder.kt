@@ -127,10 +127,14 @@ object FfmpegCommandBuilder {
                 add("-c:v"); add("libx264")
                 add("-crf"); add(spec.crf.toString())
                 add("-preset"); add(spec.preset)
-                // Memory ceiling, not a speed knob: an unbounded x264 grew past 1.1GB on a
-                // 53 frame render and the phone killed the app.
+                // Memory ceiling, not a speed knob. Frame threading gives every thread its own
+                // buffer of the frame, so at 4K a 4-thread encode peaked near 2GB and the
+                // phone's low-memory killer took the render (silently - no ffmpeg error, just a
+                // dead process). sliced-threads shares one frame across the threads instead, so
+                // memory stops scaling with the thread count; rc-lookahead bounds the rest.
                 add("-threads"); add(spec.threads.coerceAtLeast(1).toString())
-                add("-x264-params"); add("rc-lookahead=${spec.lookahead.coerceAtLeast(1)}")
+                add("-x264-params")
+                add("sliced-threads=1:rc-lookahead=${spec.lookahead.coerceAtLeast(1)}")
             }
         }
 
@@ -143,8 +147,12 @@ object FfmpegCommandBuilder {
     private fun filterGraph(spec: RenderSpec): String? {
         val filters = mutableListOf<String>()
         if (spec.longEdgePx > 0) {
-            // -2 keeps the aspect ratio and forces an even dimension, which H.264 requires.
-            filters += "scale=${spec.longEdgePx}:-2:flags=lanczos"
+            // Fit the frame inside a longEdge x longEdge box: the *long* edge becomes longEdgePx,
+            // scaling down only. The old `scale=W:-2` set the *width*, so a portrait frame's
+            // short edge was blown up to 3840 - a 3840x5120 (20 MP) frame that peaked ffmpeg
+            // near 2 GB and got the render killed. force_divisible_by=2 keeps H.264's even dims.
+            filters += "scale=w=${spec.longEdgePx}:h=${spec.longEdgePx}:" +
+                "force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos"
         }
         if (spec.deflicker) filters += "deflicker"
         return filters.takeIf { it.isNotEmpty() }?.joinToString(",")

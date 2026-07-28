@@ -5,8 +5,14 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class RenderSpec(
     val fps: Int = 30,
-    /** Long edge of the output; frames are scaled down to fit. 0 keeps the source size. */
-    val longEdgePx: Int = 3840,
+    /**
+     * Long edge of the output; frames are scaled down to fit inside a longEdge x longEdge box.
+     * 0 keeps the source size. 1920 (1080p-class) by default: phone frames are often 4K
+     * portrait (~20 MP once scaled), which a budget phone cannot encode without the low-memory
+     * killer taking the render. The originals are untouched, so a higher-resolution pass can be
+     * run from the copyable command on a PC, or by raising this in the edited command.
+     */
+    val longEdgePx: Int = 1920,
     val encoder: Encoder = Encoder.X264,
     /** Used by [Encoder.HARDWARE], which has no CRF equivalent. */
     val bitrateMbps: Int = 60,
