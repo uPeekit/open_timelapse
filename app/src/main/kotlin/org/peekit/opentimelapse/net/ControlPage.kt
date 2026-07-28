@@ -1,12 +1,14 @@
 package org.peekit.opentimelapse.net
 
 /**
- * The one page the server hands a browser, so controlling the phone needs nothing installed.
+ * The dashboard the server hands a browser: one page that monitors several phones at once.
  *
- * Self-contained by necessity - it is served over plain http on a LAN with no way to fetch
- * anything else. It asks for the token once (remembered in this tab), then polls /status and
- * sends it as a Bearer header on every request. The token is never in the page as shipped;
- * the user pastes it or arrives via a ?token= link from the QR code.
+ * Self-contained by necessity - served over plain http on a LAN with nothing else to fetch.
+ * Each phone is a card; the phone the page was opened from is added automatically from the
+ * ?token= link, and more are added by pasting their pairing links. The fleet is kept in this
+ * page's localStorage. Every request carries the token as a query parameter and sets no custom
+ * header, so cross-origin polling of other phones stays a "simple" CORS request the servers'
+ * Access-Control-Allow-Origin: * already covers.
  */
 object ControlPage {
     val HTML = """
@@ -18,91 +20,161 @@ object ControlPage {
 <title>OpenTimelapse</title>
 <style>
   :root { color-scheme: light dark; }
-  body { font-family: system-ui, sans-serif; margin: 0; padding: 1.5rem; max-width: 640px; }
-  h1 { font-size: 1.3rem; }
-  .card { border: 1px solid rgba(128,128,128,.35); border-radius: 12px; padding: 1rem; margin: 1rem 0; }
-  .row { display: flex; justify-content: space-between; padding: .25rem 0; }
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; }
+  h1 { font-size: 1.2rem; margin: .2rem 0 1rem; }
+  .add { display: flex; gap: .5rem; margin-bottom: 1rem; max-width: 640px; flex-wrap: wrap; }
+  input { flex: 1; min-width: 12rem; padding: .55rem; font-size: 1rem; box-sizing: border-box;
+          border-radius: 8px; border: 1px solid rgba(128,128,128,.5); background: transparent; color: inherit; }
+  button { padding: .55rem 1rem; font-size: 1rem; border-radius: 8px; border: none; cursor: pointer; }
+  .primary { background: #5b4bd6; color: #fff; }
+  .ghost { background: transparent; border: 1px solid rgba(128,128,128,.5); color: inherit; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
+  .card { border: 1px solid rgba(128,128,128,.35); border-radius: 12px; padding: .8rem; }
+  .bar { display: flex; justify-content: space-between; align-items: center; }
+  .bar h2 { font-size: .95rem; margin: 0; word-break: break-all; }
+  .row { display: flex; justify-content: space-between; padding: .15rem 0; font-size: .9rem; }
   .k { opacity: .7; }
-  input { width: 100%; padding: .6rem; font-size: 1rem; box-sizing: border-box; border-radius: 8px;
-          border: 1px solid rgba(128,128,128,.5); background: transparent; color: inherit; }
-  button { padding: .7rem 1.2rem; font-size: 1rem; border-radius: 8px; border: none; cursor: pointer;
-           margin-right: .5rem; }
-  .stop { background: #5b4bd6; color: #fff; }
-  img { max-width: 100%; border-radius: 8px; margin-top: .5rem; display: none; }
-  .muted { opacity: .6; font-size: .85rem; }
+  .card img { max-width: 70%; border-radius: 8px; margin-top: .5rem; display: none; }
+  .muted { opacity: .6; font-size: .8rem; }
+  .x { background: transparent; border: none; color: inherit; opacity: .6; cursor: pointer; font-size: 1.2rem; }
+  .stop { background: #5b4bd6; color: #fff; margin-top: .5rem; }
 </style>
 </head>
 <body>
 <h1>OpenTimelapse</h1>
 
-<div class="card" id="auth">
-  <label class="k" for="token">Access token</label>
-  <input id="token" placeholder="paste the token from the app" autocomplete="off">
-  <p class="muted">Shown in the app as a QR code when the server is on. Kept only in this tab.</p>
+<div class="add">
+  <input id="link" placeholder="paste a phone's pairing link" autocomplete="off">
+  <button class="primary" onclick="addFromInput()">+ Add</button>
+  <button class="ghost" onclick="forgetAll()">Forget all</button>
 </div>
 
-<div class="card">
-  <div class="row"><span class="k">State</span><span id="state">-</span></div>
-  <div class="row"><span class="k">Session</span><span id="session">-</span></div>
-  <div class="row"><span class="k">Frames</span><span id="frames">-</span></div>
-  <div class="row"><span class="k">Next frame</span><span id="next">-</span></div>
-  <div class="row"><span class="k">Battery</span><span id="battery">-</span></div>
-  <div class="row"><span class="k">Free storage</span><span id="storage">-</span></div>
-</div>
-
-<div class="card">
-  <button class="stop" onclick="control('stop')">Stop</button>
-  <div><img id="preview" alt="last frame"></div>
-  <p class="muted" id="msg"></p>
-</div>
+<div class="grid" id="grid"></div>
 
 <script>
-function tok() { return document.getElementById('token').value.trim(); }
-function h() { return tok() ? { 'Authorization': 'Bearer ' + tok() } : {}; }
+var STORE = 'otl.devices';
 
-// A token arriving in the URL (from the QR code) pre-fills the field, then is dropped from
-// the visible address so it is not left in history or shoulder-surfed.
-(function () {
-  var m = location.search.match(/token=([^&]+)/);
-  if (m) {
-    document.getElementById('token').value = decodeURIComponent(m[1]);
-    history.replaceState(null, '', location.pathname);
-  }
-})();
+function load() {
+  try { return JSON.parse(localStorage.getItem(STORE)) || []; } catch (e) { return []; }
+}
+function save(list) { localStorage.setItem(STORE, JSON.stringify(list)); }
+
+// "http://host:port/?token=X" -> {base, token}
+function parseLink(text) {
+  try {
+    var u = new URL(text.trim());
+    return { base: u.origin, token: u.searchParams.get('token') || '' };
+  } catch (e) { return null; }
+}
+
+function add(device) {
+  if (!device || !device.base || !device.token) return false;
+  var list = load();
+  var existing = list.find(function (d) { return d.base === device.base; });
+  if (existing) { existing.token = device.token; } else { list.push(device); }
+  save(list);
+  render();
+  return true;
+}
+
+function addFromInput() {
+  var input = document.getElementById('link');
+  if (add(parseLink(input.value))) { input.value = ''; input.placeholder = 'paste a phone\'s pairing link'; }
+  else { input.placeholder = 'not a valid pairing link'; input.value = ''; }
+}
+
+function remove(base) {
+  save(load().filter(function (d) { return d.base !== base; }));
+  render();
+}
+
+function forgetAll() {
+  if (confirm('Forget all phones on this page?')) { save([]); render(); }
+}
 
 function fmtNext(s) { return s == null ? '-' : (s <= 0 ? 'now' : s + 's'); }
 
-async function poll() {
-  if (!tok()) { document.getElementById('msg').textContent = 'Enter the token to connect.'; return; }
+function card(device) {
+  var el = document.createElement('div');
+  el.className = 'card';
+  el.innerHTML =
+    '<div class="bar"><h2>' + device.base.replace(/^https?:\/\//, '') + '</h2>' +
+    '<button class="x" title="remove">&times;</button></div>' +
+    '<div class="row"><span class="k">State</span><span data-f="state">-</span></div>' +
+    '<div class="row"><span class="k">Session</span><span data-f="session">-</span></div>' +
+    '<div class="row"><span class="k">Frames</span><span data-f="frames">-</span></div>' +
+    '<div class="row"><span class="k">Next</span><span data-f="next">-</span></div>' +
+    '<div class="row"><span class="k">Battery</span><span data-f="battery">-</span></div>' +
+    '<div class="row"><span class="k">Storage</span><span data-f="storage">-</span></div>' +
+    '<img data-f="preview" alt="last frame">' +
+    '<div><button class="stop">Stop</button></div>' +
+    '<p class="muted">Stopping ends the session - this phone drops off the page (its server ' +
+    'only runs while shooting).</p>' +
+    '<p class="muted" data-f="msg"></p>';
+  el.querySelector('.x').onclick = function () { remove(device.base); };
+  el.querySelector('.stop').onclick = function () { stop(device); };
+  return el;
+}
+
+function field(el, name) { return el.querySelector('[data-f="' + name + '"]'); }
+
+async function pollCard(device, el) {
   try {
-    var r = await fetch('/status', { headers: h() });
-    if (r.status === 401) { document.getElementById('msg').textContent = 'Token rejected.'; return; }
+    var r = await fetch(device.base + '/status?token=' + encodeURIComponent(device.token));
+    if (r.status === 401) { field(el, 'msg').textContent = 'token rejected'; return; }
     var s = await r.json();
-    document.getElementById('state').textContent = s.state;
-    document.getElementById('session').textContent = s.sessionName || '-';
-    document.getElementById('frames').textContent = s.framesCaptured;
-    document.getElementById('next').textContent = fmtNext(s.nextFrameInSeconds);
-    document.getElementById('battery').textContent = s.batteryPercent + '%' + (s.charging ? ' (charging)' : '');
-    document.getElementById('storage').textContent = s.freeStorageMb + ' MB';
-    document.getElementById('msg').textContent = '';
+    field(el, 'state').textContent = s.state;
+    field(el, 'session').textContent = s.sessionName || '-';
+    field(el, 'frames').textContent = s.framesCaptured;
+    field(el, 'next').textContent = fmtNext(s.nextFrameInSeconds);
+    field(el, 'battery').textContent = s.batteryPercent + '%' + (s.charging ? ' (charging)' : '');
+    field(el, 'storage').textContent = s.freeStorageMb + ' MB';
+    field(el, 'msg').textContent = '';
     if (s.framesCaptured > 0) {
-      var img = document.getElementById('preview');
-      img.src = '/preview?token=' + encodeURIComponent(tok()) + '&t=' + Date.now();
+      var img = field(el, 'preview');
+      img.src = device.base + '/preview?token=' + encodeURIComponent(device.token) + '&t=' + Date.now();
       img.style.display = 'block';
     }
   } catch (e) {
-    document.getElementById('msg').textContent = 'Cannot reach the phone.';
+    field(el, 'msg').textContent = 'unreachable';
   }
 }
 
-async function control(action) {
-  if (!tok()) { document.getElementById('msg').textContent = 'Enter the token first.'; return; }
-  await fetch('/' + action, { method: 'POST', headers: h() });
-  setTimeout(poll, 300);
+async function stop(device) {
+  try { await fetch(device.base + '/stop?token=' + encodeURIComponent(device.token), { method: 'POST' }); }
+  catch (e) {}
 }
 
-poll();
-setInterval(poll, 2000);
+var cards = {};
+
+function render() {
+  var grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  cards = {};
+  load().forEach(function (device) {
+    var el = card(device);
+    grid.appendChild(el);
+    cards[device.base] = { el: el, device: device };
+  });
+}
+
+function pollAll() {
+  Object.keys(cards).forEach(function (base) { pollCard(cards[base].device, cards[base].el); });
+}
+
+// The phone the page was opened from: add it, then strip the token from the visible URL.
+(function () {
+  var m = location.search.match(/token=([^&]+)/);
+  if (m) {
+    add({ base: location.origin, token: decodeURIComponent(m[1]) });
+    history.replaceState(null, '', location.pathname);
+  } else {
+    render();
+  }
+})();
+
+pollAll();
+setInterval(pollAll, 2000);
 </script>
 </body>
 </html>
