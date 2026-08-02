@@ -256,6 +256,57 @@ class CycleRunnerTest {
     }
 
     @Test
+    fun `the shutter control is awaited rather than guessed at with a delay`() = runTest {
+        runner().run(config(), frameIndex = 1)
+
+        val awaited = actuator.calls.indexOf("awaitShutterReady")
+        val clicked = actuator.calls.indexOf("clickShutter")
+        assertTrue(awaited >= 0, "the camera step must wait for the shutter to exist")
+        assertTrue(awaited < clicked, "waiting after pressing would be pointless")
+    }
+
+    @Test
+    fun `a shutter that never appears still lets the cycle try`() = runTest {
+        // Some camera apps expose no matching node at all; the coordinate fallback is the
+        // whole reason it exists, so a missing control must not drop the frame here.
+        actuator.shutterReadyResult = StepResult.fail("no shutter control appeared")
+
+        val outcome = runner().run(config(), frameIndex = 1)
+
+        assertTrue(actuator.calls.contains("clickShutter"))
+        assertTrue(outcome.captured)
+    }
+
+    @Test
+    fun `an already-open camera does not wait for the shutter again`() = runTest {
+        actuator.screenOn = true
+        actuator.keyguardShowing = false
+        actuator.foreground = CAMERA
+
+        runner().run(config(mode = CycleMode.AWAKE), frameIndex = 1)
+
+        assertFalse(actuator.calls.contains("awaitShutterReady"), "the camera was already up")
+    }
+
+    @Test
+    fun `the capture window widens after a capture slower than the configured one`() = runTest {
+        // A sunset in auto mode: exposures lengthen as the light goes, and the window has to
+        // grow ahead of them or the best frames are the ones that fail.
+        val runner = runner()
+        val configured = config().capture.captureTimeoutMs
+        actuator.onAwaitMedia = { time.advance(15_000) }
+
+        runner.run(config(), frameIndex = 1)
+        assertEquals(configured, actuator.lastCaptureTimeoutMs, "nothing observed yet")
+
+        runner.run(config(), frameIndex = 2)
+        assertTrue(
+            actuator.lastCaptureTimeoutMs >= 45_000,
+            "a 15s capture should widen the window: ${actuator.lastCaptureTimeoutMs}",
+        )
+    }
+
+    @Test
     fun `capture verification is told which app owns the expected file`() = runTest {
         runner().run(config(), frameIndex = 1)
 

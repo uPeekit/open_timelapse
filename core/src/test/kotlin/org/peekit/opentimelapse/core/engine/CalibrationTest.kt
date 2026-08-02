@@ -58,11 +58,82 @@ class CalibrationCalculatorTest {
     }
 
     @Test
-    fun `failed cycles are ignored - their timings mean nothing`() {
+    fun `a calibration that captured nothing changes nothing`() {
         val onlyFailures = listOf(run(camera = 99_000, capture = 99_000, total = 99_000, captured = false))
 
         assertEquals(base, CalibrationCalculator.deriveConfig(base, onlyFailures))
         assertEquals(base, CalibrationCalculator.deriveConfig(base, emptyList()))
+    }
+
+    @Test
+    fun `a capture that timed out still raises the ceiling`() {
+        // Measured on a Galaxy S20: two cycles timed out at 8.2s while the ones that landed
+        // took under 1.5s. Counting only the winners derived an even shorter timeout, which
+        // is what walked this phone from 15s down to 5s and would have broken long exposures
+        // outright.
+        val config = CalibrationCalculator.deriveConfig(
+            base,
+            listOf(
+                run(camera = 1_000, capture = 1_200, total = 6_000),
+                run(camera = 1_000, capture = 8_200, total = 12_000, captured = false),
+            ),
+        )
+
+        assertTrue(
+            config.capture.captureTimeoutMs >= 8_200,
+            "a capture that hit its limit did not take less than the limit: " +
+                "${config.capture.captureTimeoutMs}",
+        )
+    }
+
+    @Test
+    fun `a camera launch that timed out still raises its ceiling`() {
+        val config = CalibrationCalculator.deriveConfig(
+            base,
+            listOf(
+                run(camera = 900, capture = 1_000, total = 5_000),
+                run(camera = 12_000, capture = 0, total = 13_000, captured = false),
+            ),
+        )
+
+        assertTrue(config.delays.cameraForegroundTimeoutMs >= 12_000)
+    }
+
+    @Test
+    fun `recalibration never lowers a ceiling`() {
+        // A timeout that is too large costs nothing - it ends the moment its condition is
+        // met - so a fast recalibration must not undo a slow one it happened not to see.
+        val generous = base.copy(
+            capture = base.capture.copy(captureTimeoutMs = 40_000),
+            delays = base.delays.copy(cameraForegroundTimeoutMs = 25_000),
+        )
+
+        val config = CalibrationCalculator.deriveConfig(
+            generous,
+            listOf(run(camera = 500, capture = 800, total = 4_000)),
+        )
+
+        assertEquals(40_000, config.capture.captureTimeoutMs)
+        assertEquals(25_000, config.delays.cameraForegroundTimeoutMs)
+    }
+
+    @Test
+    fun `a settle delay still follows only the cycles that worked`() {
+        // Unlike a ceiling, this is paid on every single frame, so a camera that never
+        // appeared must not inflate it.
+        val config = CalibrationCalculator.deriveConfig(
+            base,
+            listOf(
+                run(camera = 1_000, capture = 1_000, total = 5_000),
+                run(camera = 20_000, capture = 0, total = 21_000, captured = false),
+            ),
+        )
+
+        assertTrue(
+            config.delays.afterCameraReadyMs <= 1_000 * 2,
+            "settle should follow the 1s that worked, not the 20s timeout: " +
+                "${config.delays.afterCameraReadyMs}",
+        )
     }
 
     @Test

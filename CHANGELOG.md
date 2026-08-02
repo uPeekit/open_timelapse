@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.5.1
+
+### Waiting for the camera instead of guessing at it
+
+The cycle now waits for the shutter control to actually appear before pressing it, rather
+than sleeping a calibrated two seconds and hoping. A cold camera start that used to drop the
+frame now just takes a moment longer, and the blind settle afterwards is down to 800ms.
+
+### Timeouts no longer shrink
+
+A step that timed out was excluded from calibration, so its slow timing never counted and the
+timeout was fitted to the fast cycles alone — shorter timeout, more timeouts, still ignored,
+shorter again. A Galaxy S20 walked from 15s to 5s while genuinely needing more than 8s. Now a
+timed-out step counts at its limit (it certainly took no less), and recalibration can only
+ever widen a ceiling, never narrow one. The capture default is 30s.
+
+The camera settle had the same fault in the opposite direction: it was derived from a
+measurement that included the previous settle, so every calibration multiplied it by 1.2 until
+it pinned at the 5s ceiling. It is now measured outside the settle it produces.
+
+### The capture window follows the light
+
+The wait for a frame widens during a session as it sees slower captures, so a sunset shot in
+auto mode — where exposures lengthen as the light goes — keeps landing frames instead of
+failing exactly when the shots get good. Switching to Night mode or a long Pro exposure no
+longer needs a recalibration.
+
+### Calibration ends where you can see it
+
+Calibration used to end in silence: its last cycle locks the screen, so the camera app was
+left in front and the result was only visible to someone who thought to navigate back.
+
+- Calibration and Test shot now bring the app back to the front when they finish, waking and
+  unlocking the screen the way a cycle already does. A full session deliberately does not —
+  it can end at four in the morning.
+- Every run now posts a dismissible result notification ("Calibrated: shortest safe interval
+  11s...", "Finished: 240 frames", "Stopped after 12 frames"). Previously the ongoing
+  notification was just removed, which announced nothing at all.
+- The notification during calibration counts progress ("Calibrating - 2 of 3 frames") rather
+  than repeating "Running - frame 1 captured", which is what every calibration cycle shoots.
+
 ## 0.5.0
 
 ### Added

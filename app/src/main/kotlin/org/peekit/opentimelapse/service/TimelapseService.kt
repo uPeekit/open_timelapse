@@ -12,9 +12,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.peekit.opentimelapse.MainActivity
 import org.peekit.opentimelapse.TimelapseApp
+import org.peekit.opentimelapse.accessibility.AccessibilityBridge
 import org.peekit.opentimelapse.core.engine.CapturedMedia
 import org.peekit.opentimelapse.core.engine.CalibrationCalculator
 import org.peekit.opentimelapse.core.engine.CalibrationCollector
@@ -69,6 +73,14 @@ class TimelapseService : Service() {
     /** Kept so the mandatory startForeground() at the top of onStartCommand says something true. */
     @Volatile
     private var notificationStatus = "Idle"
+
+    /** The last thing [report] said, re-posted as the result notification when the run ends. */
+    @Volatile
+    private var lastReport: String? = null
+
+    /** Calibration reuses the session's event sink, but must not describe itself as one. */
+    @Volatile
+    private var calibrating = false
 
     /** The snapshot the engine reads at the start of each cycle. */
     @Volatile
@@ -174,9 +186,15 @@ class TimelapseService : Service() {
                 // NonCancellable because Stop cancels this job: a suspend call in a
                 // cancelled coroutine throws at its first suspension point, which
                 // silently lost the final manifest write and reported 0 frames.
+                val stoppedByUser = !isActive
                 charging.stop()
                 stopControlServer()
-                withContext(NonCancellable) { closeSession() }
+                withContext(NonCancellable) {
+                    closeSession()
+                    // Only the test shot returns to the app; a full session is unattended by
+                    // definition and announces itself by notification alone.
+                    if (singleCycle && !stoppedByUser) returnToApp()
+                }
                 watcher.cancel()
                 stopSelfSafely()
             }
@@ -195,6 +213,7 @@ class TimelapseService : Service() {
         if (sessionJob?.isActive == true) return
 
         framesCaptured = 0
+        calibrating = true
         notificationStatus = "Calibrating..."
         goForeground(notificationStatus, 0)
         wakeLock.acquire()
@@ -246,7 +265,13 @@ class TimelapseService : Service() {
 
                 applyCalibration(collector.measurements, settle)
             } finally {
-                withContext(NonCancellable) { closeSession() }
+                // Read before entering NonCancellable, which would report active again: a
+                // user who pressed Stop chose to leave, and must not be pulled back in.
+                val stoppedByUser = !isActive
+                withContext(NonCancellable) {
+                    closeSession()
+                    if (!stoppedByUser) returnToApp()
+                }
                 stopSelfSafely()
             }
         }
@@ -261,7 +286,10 @@ class TimelapseService : Service() {
 
         val minInterval = CalibrationCalculator.minimumIntervalSeconds(usable)
         app.configRepository.update { stored ->
-            CalibrationCalculator.deriveConfig(stored, usable).let { tuned ->
+            // Every run, not only the ones that landed: a cycle that timed out is the single
+            // most useful measurement there is for a ceiling, and filtering it out here was
+            // what kept the ratchet alive even after the calculator learned to count it.
+            CalibrationCalculator.deriveConfig(stored, runs).let { tuned ->
                 tuned.copy(
                     delays = tuned.delays.copy(afterWakeMs = settleMs),
                     intervalSeconds = tuned.intervalSeconds.coerceAtLeast(minInterval),
@@ -451,21 +479,110 @@ class TimelapseService : Service() {
     private fun stop() {
         engine?.requestStop()
         sessionJob?.cancel()
+        // Said explicitly, because cancelling means the engine never reaches its own summary:
+        // without this the result notification would repeat whatever was last said mid-run.
+        lastReport = "Stopped after $framesCaptured frame${if (framesCaptured == 1) "" else "s"}"
         stopSelfSafely()
     }
 
     private fun report(text: String) {
+        lastReport = text
         app.log.message(text)
         notification.update(text, framesCaptured)
     }
 
+    /**
+     * Brings the app back to the front after a run the user is watching.
+     *
+     * Calibration and a test shot both end with the camera in front and, in lock-cycle mode,
+     * a locked screen - so the result was only visible to someone who thought to navigate
+     * back, which is not obvious when the phone has been shooting by itself for a minute.
+     * A real session is deliberately excluded: it can end at four in the morning, and waking
+     * the phone then would be wrong.
+     */
+    private suspend fun returnToApp() {
+        // The lock that ends the final cycle is asynchronous, exactly as the wake is. Asking
+        // the display straight afterwards can still answer "on", which skipped the wake
+        // entirely and left the phone showing a lock screen that arrived a moment later.
+        awaitLockSettled()
+
+        if (app.actuator.isScreenOn()) {
+            app.log.message("Returning to the app: screen already on")
+        } else {
+            val woke = app.actuator.wakeScreen()
+            // The same settle the cycle pays: a screen that reports itself on does not yet
+            // accept touches, and the swipe below would be swallowed.
+            delay(liveConfig.delays.afterWakeMs)
+            app.log.message("Returning to the app: wake ${woke.describe()}")
+        }
+
+        unlockForReturn()
+
+        // Launched from the accessibility service where possible: it is system-bound, which
+        // is what exempts it from the background-activity-launch restrictions.
+        val launcher: Context = AccessibilityBridge.service ?: this
+        val intent = Intent(this, MainActivity::class.java)
+            // SINGLE_TOP so an app already in the back stack is handed the extra through
+            // onNewIntent, rather than being reordered forward without ever reading it.
+            .addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+            )
+            .putExtra(MainActivity.EXTRA_OVER_KEYGUARD, true)
+        runCatching { launcher.startActivity(intent) }
+            .onFailure { app.log.message("Could not bring the app forward: ${it.message}") }
+    }
+
+    /** Waits for the screen to go dark after the closing lock, so the wake below is not skipped. */
+    private suspend fun awaitLockSettled() {
+        if (liveConfig.mode != CycleMode.LOCK_CYCLE) return
+        val deadline = app.clock.nowMs() + LOCK_SETTLE_TIMEOUT_MS
+        while (app.clock.nowMs() < deadline) {
+            if (!app.actuator.isScreenOn()) return
+            delay(LOCK_SETTLE_POLL_MS)
+        }
+    }
+
+    /**
+     * Dismisses the keyguard, retried and verified against device state.
+     *
+     * The dispatch result is not evidence - One UI swallows a swipe sent too soon after a
+     * wake, reproducibly, which is why the cycle itself retries. A single unverified attempt
+     * here is what left the phone sitting on the lock screen with the result unread.
+     */
+    private suspend fun unlockForReturn() {
+        if (!app.actuator.isKeyguardShowing()) return
+
+        // A swipe cannot pass a PIN, pattern or password; the notification does the telling.
+        if (app.actuator.isDeviceSecure()) {
+            app.log.message("Lock screen is secured - unlock to see the result")
+            return
+        }
+
+        for (attempt in 1..liveConfig.unlock.attempts.coerceAtLeast(1)) {
+            app.actuator.swipeUnlock(liveConfig.unlock)
+            delay(liveConfig.delays.afterUnlockMs)
+            if (!app.actuator.isKeyguardShowing()) {
+                app.log.message("Returning to the app: unlocked on attempt $attempt")
+                return
+            }
+        }
+        app.log.message("Returning to the app: the lock screen would not dismiss")
+    }
+
     private fun stopSelfSafely() {
         wakeLock.release()
-        // REMOVE, not DETACH: detaching left the notification on screen with whatever text it
-        // last had - "Stopping..." after a Stop - and nothing ever updated it again, so it went
-        // stale. Removing it is the honest signal that the session is over; the result is in
-        // the app's session list and the log.
+        // REMOVE, not DETACH: detaching left the ongoing notification on screen with whatever
+        // text it last had - "Stopping..." after a Stop - and nothing ever updated it again,
+        // so it went stale.
         stopForeground(STOP_FOREGROUND_REMOVE)
+        // The outcome then goes up as its own dismissible notification. Removing the ongoing
+        // one alone was silent: a calibration that finished while the phone sat face-down
+        // announced itself nowhere at all.
+        lastReport?.let { notification.result(it) }
+        lastReport = null
+        calibrating = false
         stopSelf()
     }
 
@@ -475,7 +592,16 @@ class TimelapseService : Service() {
         when (event) {
             is EngineEvent.FrameCaptured -> {
                 framesCaptured++
-                notification.update("Running - frame ${event.index} captured", framesCaptured)
+                // Every calibration cycle shoots frame 1, so "frame ${index} captured" read
+                // as if nothing were progressing. Count the frames it still needs instead.
+                notification.update(
+                    if (calibrating) {
+                        "Calibrating - $framesCaptured of $CALIBRATION_CAPTURES frames"
+                    } else {
+                        "Running - frame ${event.index} captured"
+                    },
+                    framesCaptured,
+                )
 
                 // Published for the control server: frame count, the preview source, and an
                 // estimate of the next slot (the engine schedules absolutely, but last+interval
@@ -565,6 +691,10 @@ class TimelapseService : Service() {
         private const val CALIBRATION_MAX_ATTEMPTS = 6
 
         private const val MANIFEST_FLUSH_EVERY = 5
+
+        /** The closing lock is asynchronous; this is how long its effect is waited for. */
+        private const val LOCK_SETTLE_TIMEOUT_MS = 2_000L
+        private const val LOCK_SETTLE_POLL_MS = 100L
 
         fun send(context: Context, action: String) {
             val intent = Intent(context, TimelapseService::class.java).setAction(action)

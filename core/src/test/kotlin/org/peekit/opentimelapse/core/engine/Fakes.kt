@@ -76,6 +76,7 @@ class FakeActuator(
     var launchResult: StepResult = StepResult.Ok
     var awaitForegroundResult: StepResult = StepResult.Ok
     var shutterResult: ShutterResult = ShutterResult(true, ShutterStrategy.VIEW_ID)
+    var shutterReadyResult: StepResult = StepResult.Ok
     var lockResult: StepResult = StepResult.Ok
 
     /** Reports success but the screen stays off - the failure mode the WAKE verify catches. */
@@ -92,6 +93,12 @@ class FakeActuator(
 
     /** The owner hint the last awaitNewMedia call carried, so tests can assert it is passed. */
     var lastMediaOwner: String? = null
+
+    /** The capture window the last awaitNewMedia call was given. */
+    var lastCaptureTimeoutMs: Long = 0
+
+    /** Lets a test spend virtual time inside the capture wait, as a slow exposure would. */
+    var onAwaitMedia: (() -> Unit)? = null
 
     override suspend fun isScreenOn(): Boolean = screenOn
 
@@ -133,6 +140,11 @@ class FakeActuator(
         return shutterResult
     }
 
+    override suspend fun awaitShutterReady(config: ShutterConfig, timeoutMs: Long): StepResult {
+        calls += "awaitShutterReady"
+        return shutterReadyResult
+    }
+
     override suspend fun awaitNewMedia(
         sinceMs: Long,
         timeoutMs: Long,
@@ -141,6 +153,8 @@ class FakeActuator(
     ): List<CapturedMedia> {
         calls += "awaitNewMedia"
         lastMediaOwner = expectedOwner
+        lastCaptureTimeoutMs = timeoutMs
+        onAwaitMedia?.invoke()
         return media
     }
 

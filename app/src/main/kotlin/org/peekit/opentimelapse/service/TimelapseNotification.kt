@@ -53,8 +53,40 @@ class TimelapseNotification(private val context: Context) {
         manager?.notify(ID, build(status, frames))
     }
 
+    /**
+     * The outcome, posted once the ongoing notification has been removed.
+     *
+     * Without it the end of a session or a calibration was silent: the foreground
+     * notification is removed on stop, so the only record was in the app - which the user
+     * had to think to open. Deliberately not ongoing, and auto-cancelling: a finished run is
+     * news, not a running state, and it must be dismissible.
+     */
+    fun result(text: String) {
+        val open = PendingIntent.getActivity(
+            context,
+            0,
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        manager?.notify(
+            RESULT_ID,
+            Notification.Builder(context, CHANNEL_ID)
+                .setContentTitle("OpenTimelapse")
+                .setContentText(text)
+                // The calibration result is a sentence, not a word; let it wrap when expanded.
+                .setStyle(Notification.BigTextStyle().bigText(text))
+                .setSmallIcon(R.drawable.ic_notification)
+                .setAutoCancel(true)
+                .setContentIntent(open)
+                .build(),
+        )
+    }
+
     companion object {
         const val ID = 1
+
+        /** Separate from [ID], which is being removed at the moment the result is posted. */
+        private const val RESULT_ID = 3
         private const val CHANNEL_ID = "timelapse"
     }
 }

@@ -32,6 +32,26 @@ class TimelapseConfigTest {
     }
 
     @Test
+    fun `a capture window narrowed by an older build is repaired on load`() {
+        // A real stored config from a Galaxy S20: the timeout ratchet in earlier builds
+        // walked this to 5s, which cannot land a night-mode frame. It was never a value the
+        // user chose - the app computed it - so it is raised rather than honoured.
+        val damaged = TimelapseConfig(capture = CaptureConfig(captureTimeoutMs = 5_000))
+
+        assertTrue(
+            damaged.normalized().capture.captureTimeoutMs >= 15_000,
+            "got ${damaged.normalized().capture.captureTimeoutMs}",
+        )
+    }
+
+    @Test
+    fun `a generous capture window is left exactly as it is`() {
+        val wide = TimelapseConfig(capture = CaptureConfig(captureTimeoutMs = 90_000))
+
+        assertEquals(90_000L, wide.normalized().capture.captureTimeoutMs)
+    }
+
+    @Test
     fun `a zero interval cannot stall the engine`() {
         assertEquals(1_000L, TimelapseConfig(intervalSeconds = 0).intervalMs)
         assertEquals(30_000L, TimelapseConfig(intervalSeconds = 30).intervalMs)

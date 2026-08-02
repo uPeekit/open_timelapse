@@ -30,6 +30,17 @@ interface DeviceActuator {
 
     suspend fun awaitForegroundPackage(packageName: String, timeoutMs: Long): StepResult
 
+    /**
+     * Waits for a real shutter control to appear in the camera's UI.
+     *
+     * This is the observable version of "the camera is ready": the package being in the
+     * foreground says nothing about whether it has finished opening the lens and drawing
+     * its controls. Fails when nothing recognisable appeared, which is not fatal - the
+     * coordinate fallback in [clickShutter] exists for camera apps that expose no usable
+     * node at all.
+     */
+    suspend fun awaitShutterReady(config: ShutterConfig, timeoutMs: Long): StepResult
+
     suspend fun clickShutter(config: ShutterConfig): ShutterResult
 
     /**

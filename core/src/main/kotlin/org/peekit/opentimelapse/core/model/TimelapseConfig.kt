@@ -37,15 +37,29 @@ data class TimelapseConfig(
      * Renaming needs to know *which* files a shutter press produced, and MediaStore
      * observation is the only thing that knows. Call before every cycle.
      */
-    fun normalized(): TimelapseConfig =
+    fun normalized(): TimelapseConfig {
+        var resolved = this
         if (naming.enabled && !capture.verifyViaMediaStore) {
-            copy(capture = capture.copy(verifyViaMediaStore = true))
-        } else {
-            this
+            resolved = resolved.copy(capture = resolved.capture.copy(verifyViaMediaStore = true))
         }
+        // Repairs a window narrowed by the timeout ratchet in builds before 0.5.1, which
+        // could walk it down to 5s - too short for night mode or any long exposure, and
+        // never a number the user chose: the app derived it.
+        if (resolved.capture.captureTimeoutMs < MIN_SAFE_CAPTURE_TIMEOUT_MS) {
+            resolved = resolved.copy(
+                capture = resolved.capture.copy(captureTimeoutMs = MIN_SAFE_CAPTURE_TIMEOUT_MS),
+            )
+        }
+        return resolved
+    }
 
     /** Coerced: a zero interval would spin the engine's slot-skipping loop forever. */
     val intervalMs: Long get() = intervalSeconds.coerceAtLeast(1) * 1000L
+
+    companion object {
+        /** No camera on any tested device confirmed a frame reliably below this. */
+        const val MIN_SAFE_CAPTURE_TIMEOUT_MS = 15_000L
+    }
 }
 
 enum class CycleMode {
@@ -85,10 +99,13 @@ data class DelayConfig(
     val afterWakeMs: Long = 1_500L,
     val afterUnlockMs: Long = 400L,
     /**
-     * OEM camera apps need time to open the lens and settle exposure after resuming.
-     * Raised after One UI was still showing a transient dialog 4 s post-launch.
+     * The residual settle after the shutter control has actually been seen on screen.
+     *
+     * Most of this wait used to be guesswork about how long the camera takes to draw itself,
+     * which is now awaited instead - see [DeviceActuator.awaitShutterReady]. What is left is
+     * the part still not observable: exposure and focus converging once the controls are up.
      */
-    val afterCameraReadyMs: Long = 2_000L,
+    val afterCameraReadyMs: Long = 800L,
     /** Only used when capture verification is off; otherwise we wait for the real file. */
     val afterShutterMs: Long = 300L,
     /**
@@ -127,12 +144,14 @@ enum class ShutterMode {
 data class CaptureConfig(
     val verifyViaMediaStore: Boolean = true,
     /**
-     * Measured on a Galaxy S20: MediaStore registered a frame 3.9s after the shutter, and
-     * others took longer than 5s - photos that existed on disk were reported as failures.
-     * Costs nothing to be generous, since the wait ends the moment the file appears, and
-     * night mode or multi-second Pro exposures are legitimately slow.
+     * A ceiling, not a cost: the wait ends the moment the file appears, so being generous
+     * is free and being tight is not. Measured on a Galaxy S20, MediaStore registered a
+     * frame 3.9s after the shutter and others took longer than 8s - photos that existed on
+     * disk were reported as failures. Night mode and a multi-second Pro exposure are
+     * legitimately slower again, and [org.peekit.opentimelapse.core.engine.CaptureWindow]
+     * widens this further if it sees one.
      */
-    val captureTimeoutMs: Long = 15_000L,
+    val captureTimeoutMs: Long = 30_000L,
     /** After the first new file, how long to keep collecting siblings (the DNG next to the JPEG). */
     val siblingQuietMs: Long = 700L,
 )

@@ -85,6 +85,29 @@ class AndroidDeviceActuator(
         return StepResult.fail("$packageName did not reach the foreground within ${timeoutMs}ms")
     }
 
+    /**
+     * Polls the camera's UI until a real shutter control is there to press.
+     *
+     * "Resolved by coordinates" deliberately does not count: [NodeFinder.resolve] always
+     * returns something, falling back to a fixed point on the screen, so accepting that
+     * would make this wait return instantly and mean nothing. Only an actual matched node -
+     * by view id, description, or shape - says the camera has finished drawing itself.
+     */
+    override suspend fun awaitShutterReady(config: ShutterConfig, timeoutMs: Long): StepResult {
+        val service = AccessibilityBridge.awaitService()
+            ?: return StepResult.fail("accessibility service is not connected")
+
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val resolved = NodeFinder.resolve(service.rootInActiveWindow, config, service.screenBounds())
+            if (resolved != null && resolved.strategy != ShutterStrategy.COORDINATES) {
+                return StepResult.ok("shutter ready: ${resolved.detail}")
+            }
+            delay(SHUTTER_POLL_MS)
+        }
+        return StepResult.fail("no shutter control appeared within ${timeoutMs}ms")
+    }
+
     override suspend fun clickShutter(config: ShutterConfig): ShutterResult {
         val service = AccessibilityBridge.awaitService()
             ?: return ShutterResult(false, ShutterStrategy.NONE, "accessibility service is not connected")
@@ -157,5 +180,6 @@ class AndroidDeviceActuator(
 
     private companion object {
         const val FOREGROUND_POLL_MS = 150L
+        const val SHUTTER_POLL_MS = 150L
     }
 }

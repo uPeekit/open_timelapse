@@ -1,6 +1,7 @@
 package org.peekit.opentimelapse
 
 import android.Manifest
+import android.app.KeyguardManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
@@ -49,8 +50,12 @@ class MainActivity : ComponentActivity() {
             refreshChecks()
         }
 
+    /** Set when the service brought us back over a lock screen; acted on once, when visible. */
+    private var dismissKeyguardWhenVisible = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        readReturnRequest(intent)
 
         setContent {
             MaterialTheme {
@@ -122,11 +127,46 @@ class MainActivity : ComponentActivity() {
         askForRuntimePermissions()
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        readReturnRequest(intent)
+    }
+
     override fun onResume() {
         super.onResume()
         // Re-read on every return: the user may have just changed something in Settings,
         // and several of these cannot be observed any other way.
         refreshChecks()
+
+        // Asked for here rather than in onCreate: the platform only honours it for an
+        // activity that is actually visible.
+        if (dismissKeyguardWhenVisible) {
+            dismissKeyguardWhenVisible = false
+            getSystemService(KeyguardManager::class.java)?.requestDismissKeyguard(this, null)
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // One-shot: left on, the app would show over the lock screen every time the phone
+        // was woken with it open, which is not what anyone asked for.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) setShowWhenLocked(false)
+    }
+
+    /**
+     * A return from calibration or a test shot can land on the lock screen, which is exactly
+     * where the result cannot be read.
+     *
+     * Showing over the keyguard and asking the platform to dismiss it is the supported way to
+     * do that - and it dismisses a Swipe lock without any user interaction. The service also
+     * swipes, but a dispatched gesture is swallowed often enough on One UI that it cannot be
+     * the only mechanism; a secure lock is left alone by both.
+     */
+    private fun readReturnRequest(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_OVER_KEYGUARD, false) != true) return
+        dismissKeyguardWhenVisible = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) setShowWhenLocked(true)
     }
 
     private fun refreshChecks() {
@@ -208,5 +248,10 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (wanted.isNotEmpty()) requestPermissions.launch(wanted.toTypedArray())
+    }
+
+    companion object {
+        /** Set by the service when it brings the app back after a run the user is watching. */
+        const val EXTRA_OVER_KEYGUARD = "overKeyguard"
     }
 }

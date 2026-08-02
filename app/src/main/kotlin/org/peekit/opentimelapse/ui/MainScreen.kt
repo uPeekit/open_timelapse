@@ -142,17 +142,18 @@ private fun SetupSection(checks: List<SetupCheck>, config: TimelapseConfig, acti
                         else -> "Measures how long this phone's screen and camera take, by shooting a " +
                             "few frames (about a minute; the photos stay in your camera roll)."
                     },
-                    action = if (!calibrated) {
-                        {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = actions.onCalibrate) { Text("Calibrate") }
-                                if (!cal.completed && !cal.declined) {
-                                    OutlinedButton(onClick = actions.onDeclineCalibration) { Text("Later") }
-                                }
+                    // Offered even once it is done: timings drift with a firmware update, and
+                    // a calibration that has gone wrong was otherwise impossible to redo -
+                    // the only way back was to switch camera app and make it go stale.
+                    action = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = actions.onCalibrate) {
+                                Text(if (calibrated) "Redo" else "Calibrate")
+                            }
+                            if (!cal.completed && !cal.declined) {
+                                OutlinedButton(onClick = actions.onDeclineCalibration) { Text("Later") }
                             }
                         }
-                    } else {
-                        null
                     },
                 )
             }

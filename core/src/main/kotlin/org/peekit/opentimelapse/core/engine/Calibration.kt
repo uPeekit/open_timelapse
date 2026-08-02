@@ -3,6 +3,10 @@ package org.peekit.opentimelapse.core.engine
 import org.peekit.opentimelapse.core.model.TimelapseConfig
 import kotlin.math.roundToLong
 
+// Note: cameraMs measures only how long the camera took to become ready. The deliberate
+// settle that follows is spent outside that step, so a derived settle can never be fed
+// back into the next measurement of itself.
+
 /** How long each step of one cycle actually took on this device. */
 data class CycleMeasurement(
     val wakeMs: Long = 0,
@@ -36,23 +40,37 @@ object CalibrationCalculator {
         val captured = runs.filter { it.captured }
         if (captured.isEmpty()) return base
 
-        val capture = worst(captured) { it.captureMs }
-        val camera = worst(captured) { it.cameraMs }
+        // Ceilings count every run, the failures included. A step that hit its limit did not
+        // take *less* time than that limit, and throwing those away is what let the timeout
+        // ratchet downward: on a Galaxy S20 the cycles that landed took under 1.5s while two
+        // others timed out at 8.2s, so fitting to the winners alone walked the capture window
+        // from 15s to 5s - which would have made a long exposure impossible to record at all.
+        val capture = worst(runs) { it.captureMs }
+        val camera = worst(runs) { it.cameraMs }
+        // A settle is paid on every single frame, so it follows only what actually worked.
+        val cameraSettle = worst(captured) { it.cameraMs }
 
         return base.copy(
             delays = base.delays.copy(
                 // A settle time, not a timeout: keep it tight but never below what worked.
-                afterCameraReadyMs = (camera * CAMERA_SETTLE_FACTOR)
+                afterCameraReadyMs = (cameraSettle * CAMERA_SETTLE_FACTOR)
                     .roundToLong()
                     .coerceIn(MIN_CAMERA_SETTLE_MS, MAX_CAMERA_SETTLE_MS),
-                cameraForegroundTimeoutMs = (camera * TIMEOUT_FACTOR)
-                    .roundToLong()
-                    .coerceIn(MIN_CAMERA_TIMEOUT_MS, MAX_CAMERA_TIMEOUT_MS),
+                // Never narrowed: a ceiling that is too wide costs nothing, because the wait
+                // ends the moment its condition is met. A quick recalibration must not undo
+                // what a slow one learned.
+                cameraForegroundTimeoutMs = maxOf(
+                    (camera * TIMEOUT_FACTOR).roundToLong()
+                        .coerceIn(MIN_CAMERA_TIMEOUT_MS, MAX_CAMERA_TIMEOUT_MS),
+                    base.delays.cameraForegroundTimeoutMs,
+                ),
             ),
             capture = base.capture.copy(
-                captureTimeoutMs = (capture * TIMEOUT_FACTOR)
-                    .roundToLong()
-                    .coerceIn(MIN_CAPTURE_TIMEOUT_MS, MAX_CAPTURE_TIMEOUT_MS),
+                captureTimeoutMs = maxOf(
+                    (capture * TIMEOUT_FACTOR).roundToLong()
+                        .coerceIn(MIN_CAPTURE_TIMEOUT_MS, MAX_CAPTURE_TIMEOUT_MS),
+                    base.capture.captureTimeoutMs,
+                ),
             ),
         )
     }
@@ -94,8 +112,9 @@ object CalibrationCalculator {
     private const val MAX_CAMERA_SETTLE_MS = 5_000L
     private const val MIN_CAMERA_TIMEOUT_MS = 4_000L
     private const val MAX_CAMERA_TIMEOUT_MS = 30_000L
-    private const val MIN_CAPTURE_TIMEOUT_MS = 5_000L
-    private const val MAX_CAPTURE_TIMEOUT_MS = 45_000L
+    /** Floored well clear of a fast daylight capture: the same camera is far slower at night. */
+    private const val MIN_CAPTURE_TIMEOUT_MS = 15_000L
+    private const val MAX_CAPTURE_TIMEOUT_MS = 60_000L
 
     const val WAKE_SETTLE_STEP_MS = 500L
     const val MAX_WAKE_SETTLE_MS = 4_000L

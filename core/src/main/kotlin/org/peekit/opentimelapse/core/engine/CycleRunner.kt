@@ -35,6 +35,12 @@ class CycleRunner(
     private val events: EventSink,
 ) : CycleExecutor {
 
+    /**
+     * The slowest confirmed capture so far, for [CaptureWindow]. Session-scoped: a runner is
+     * built per session, so a night shoot's long exposures do not widen a later daylight one.
+     */
+    private var longestCaptureMs = 0L
+
     override suspend fun run(config: TimelapseConfig, frameIndex: Int): CycleOutcome {
         val outcome = runSteps(config, frameIndex)
 
@@ -111,12 +117,26 @@ class CycleRunner(
                     if (!appeared.ok) {
                         appeared
                     } else {
-                        waiter.sleep(delays.afterCameraReadyMs)
-                        StepResult.Ok
+                        // Awaited, not guessed: the package being in front says nothing about
+                        // whether the camera has drawn its controls yet, and a cold start is
+                        // far slower than a resume. A miss is not fatal - some camera apps
+                        // expose no usable node and the coordinate fallback handles them - so
+                        // the settle below is still paid either way.
+                        val ready = actuator.awaitShutterReady(
+                            config.shutter,
+                            delays.cameraForegroundTimeoutMs,
+                        )
+                        if (ready.ok) StepResult.Ok else StepResult.ok(ready.describe())
                     }
                 }
             }
             if (!result.ok) return failed(CycleStep.CAMERA_FOREGROUND, result.detail)
+
+            // Paid outside the measured step, deliberately. Inside it, calibration derived the
+            // next settle from a duration that already contained the last one - 1.2x itself
+            // every run - which climbed until it pinned at the ceiling and cost seconds on
+            // every frame. Measuring only how long the camera took keeps that honest.
+            waiter.sleep(delays.afterCameraReadyMs)
         }
 
         // Recorded before the click so capture detection cannot miss a fast write.
@@ -160,20 +180,30 @@ class CycleRunner(
         val media: List<CapturedMedia>
         if (config.capture.verifyViaMediaStore) {
             events.emit(EngineEvent.StepStarted(clock.nowMs(), CycleStep.CONFIRM_CAPTURE))
+            val window = CaptureWindow.timeoutFor(
+                configuredMs = config.capture.captureTimeoutMs,
+                longestObservedMs = longestCaptureMs,
+            )
             media = actuator.awaitNewMedia(
                 sinceMs = shutterAtMs,
-                timeoutMs = config.capture.captureTimeoutMs,
+                timeoutMs = window,
                 quietMs = config.capture.siblingQuietMs,
                 expectedOwner = config.shutter.packageName,
             )
             val confirmed = media.isNotEmpty()
+            if (confirmed) {
+                // Remembered so the window can grow ahead of a scene whose exposures are
+                // getting longer. Includes the sibling quiet period, which only makes the
+                // measurement more conservative.
+                longestCaptureMs = maxOf(longestCaptureMs, clock.nowMs() - shutterAtMs)
+            }
             events.emit(
                 EngineEvent.StepFinished(
                     atMs = clock.nowMs(),
                     step = CycleStep.CONFIRM_CAPTURE,
                     ok = confirmed,
                     detail = if (confirmed) media.joinToString { it.displayName }
-                    else "no new file within ${config.capture.captureTimeoutMs}ms",
+                    else "no new file within ${window}ms",
                 )
             )
             if (!confirmed) return failed(CycleStep.CONFIRM_CAPTURE, "capture not confirmed")
