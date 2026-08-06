@@ -42,12 +42,19 @@ data class TimelapseConfig(
         if (naming.enabled && !capture.verifyViaMediaStore) {
             resolved = resolved.copy(capture = resolved.capture.copy(verifyViaMediaStore = true))
         }
-        // Repairs a window narrowed by the timeout ratchet in builds before 0.5.1, which
-        // could walk it down to 5s - too short for night mode or any long exposure, and
-        // never a number the user chose: the app derived it.
+        // Repairs ceilings narrowed by the timeout ratchet in builds before 0.5.1. Neither
+        // was a number the user chose - the app derived both - and a ceiling that is too
+        // wide costs nothing, because the wait ends the moment its condition is met.
         if (resolved.capture.captureTimeoutMs < MIN_SAFE_CAPTURE_TIMEOUT_MS) {
             resolved = resolved.copy(
                 capture = resolved.capture.copy(captureTimeoutMs = MIN_SAFE_CAPTURE_TIMEOUT_MS),
+            )
+        }
+        if (resolved.delays.cameraForegroundTimeoutMs < MIN_SAFE_CAMERA_TIMEOUT_MS) {
+            resolved = resolved.copy(
+                delays = resolved.delays.copy(
+                    cameraForegroundTimeoutMs = MIN_SAFE_CAMERA_TIMEOUT_MS,
+                ),
             )
         }
         return resolved
@@ -59,6 +66,13 @@ data class TimelapseConfig(
     companion object {
         /** No camera on any tested device confirmed a frame reliably below this. */
         const val MIN_SAFE_CAPTURE_TIMEOUT_MS = 15_000L
+
+        /**
+         * A cold camera start is far slower than a resume. Measured on a OnePlus, a ratcheted
+         * 6819ms dropped frames outright: com.oplus.camera simply had not reached the
+         * foreground yet.
+         */
+        const val MIN_SAFE_CAMERA_TIMEOUT_MS = 12_000L
     }
 }
 

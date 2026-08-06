@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.2
+
+The camera-launch timeout gets the same repair 0.5.1 gave the capture window. Found in a real
+session log on a OnePlus: calibration had walked it from 12s down to 6819ms, and the camera
+then failed to reach the foreground within exactly 6819ms, twice, dropping both frames. A
+stored value below 12s is now raised on load — a ceiling that is too wide costs nothing, since
+the wait ends the moment the camera appears.
+
 ## 0.5.1
 
 ### Waiting for things instead of guessing at them

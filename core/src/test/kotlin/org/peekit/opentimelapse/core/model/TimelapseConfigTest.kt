@@ -45,6 +45,26 @@ class TimelapseConfigTest {
     }
 
     @Test
+    fun `a camera timeout narrowed by an older build is repaired on load`() {
+        // A real stored config from a OnePlus: calibration walked this to 6819ms, and the
+        // log then shows com.oplus.camera failing to reach the foreground within exactly
+        // 6819ms, twice, dropping both frames.
+        val damaged = TimelapseConfig(delays = DelayConfig(cameraForegroundTimeoutMs = 6_819))
+
+        assertTrue(
+            damaged.normalized().delays.cameraForegroundTimeoutMs >= 12_000,
+            "got ${damaged.normalized().delays.cameraForegroundTimeoutMs}",
+        )
+    }
+
+    @Test
+    fun `a camera timeout widened by calibration is kept`() {
+        val patient = TimelapseConfig(delays = DelayConfig(cameraForegroundTimeoutMs = 25_000))
+
+        assertEquals(25_000L, patient.normalized().delays.cameraForegroundTimeoutMs)
+    }
+
+    @Test
     fun `a generous capture window is left exactly as it is`() {
         val wide = TimelapseConfig(capture = CaptureConfig(captureTimeoutMs = 90_000))
 
