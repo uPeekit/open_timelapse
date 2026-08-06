@@ -140,8 +140,12 @@ class FakeActuator(
         return shutterResult
     }
 
+    /** The window the last awaitShutterReady call was given. */
+    var lastShutterReadyTimeoutMs: Long = 0
+
     override suspend fun awaitShutterReady(config: ShutterConfig, timeoutMs: Long): StepResult {
         calls += "awaitShutterReady"
+        lastShutterReadyTimeoutMs = timeoutMs
         return shutterReadyResult
     }
 

@@ -122,9 +122,13 @@ class CycleRunner(
                         // far slower than a resume. A miss is not fatal - some camera apps
                         // expose no usable node and the coordinate fallback handles them - so
                         // the settle below is still paid either way.
+                        // Bounded well under the camera timeout: controls appear shortly
+                        // after the app does, so one that is not there within a few seconds
+                        // is not coming. Some camera apps expose no usable node at all, and
+                        // waiting the full timeout for them would be paid on every frame.
                         val ready = actuator.awaitShutterReady(
                             config.shutter,
-                            delays.cameraForegroundTimeoutMs,
+                            minOf(delays.cameraForegroundTimeoutMs, MAX_SHUTTER_WAIT_MS),
                         )
                         if (ready.ok) StepResult.Ok else StepResult.ok(ready.describe())
                     }
@@ -248,4 +252,9 @@ class CycleRunner(
 
     private fun failed(step: CycleStep, detail: String?) =
         CycleOutcome(captured = false, failedStep = step, detail = detail)
+
+    private companion object {
+        /** Long enough for a cold camera to draw its controls, short enough to give up cheaply. */
+        const val MAX_SHUTTER_WAIT_MS = 6_000L
+    }
 }

@@ -266,6 +266,33 @@ class CycleRunnerTest {
     }
 
     @Test
+    fun `the wait for a shutter is bounded well below the camera timeout`() = runTest {
+        // Some camera apps expose no usable node at all. Waiting the full camera timeout for
+        // one that is never coming would be paid on every single frame, forever.
+        val patient = config().let {
+            it.copy(delays = it.delays.copy(cameraForegroundTimeoutMs = 30_000))
+        }
+
+        runner().run(patient, frameIndex = 1)
+
+        assertTrue(
+            actuator.lastShutterReadyTimeoutMs in 1..10_000,
+            "got ${actuator.lastShutterReadyTimeoutMs}ms against a 30s camera timeout",
+        )
+    }
+
+    @Test
+    fun `a short camera timeout is not lengthened by the shutter wait`() = runTest {
+        val impatient = config().let {
+            it.copy(delays = it.delays.copy(cameraForegroundTimeoutMs = 2_000))
+        }
+
+        runner().run(impatient, frameIndex = 1)
+
+        assertEquals(2_000L, actuator.lastShutterReadyTimeoutMs)
+    }
+
+    @Test
     fun `a shutter that never appears still lets the cycle try`() = runTest {
         // Some camera apps expose no matching node at all; the coordinate fallback is the
         // whole reason it exists, so a missing control must not drop the frame here.
