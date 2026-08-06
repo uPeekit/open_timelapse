@@ -82,11 +82,12 @@ data class UnlockConfig(
     val endYPercent: Float = 0.3f,
     val durationMs: Long = 300L,
     /**
-     * Measured on One UI: a swipe dispatched too soon after waking from Always-On Display
-     * is silently swallowed, reproducibly. A second attempt costs one delay and rescues
-     * the frame instead of dropping it.
+     * Measured on One UI: a swipe dispatched too soon after waking from Always-On Display is
+     * silently swallowed, reproducibly. Each retry is verified against the keyguard and costs
+     * nothing once it has worked, so the cap is set where a genuinely stuck lock screen gives
+     * up rather than where a swallowed swipe would - two was low enough to lose frames.
      */
-    val attempts: Int = 2,
+    val attempts: Int = 4,
 )
 
 @Serializable
@@ -229,6 +230,28 @@ data class CalibrationState(
     val cameraPackage: String = "",
 ) {
     fun appliesTo(camera: String): Boolean = completed && cameraPackage == camera
+
+    /**
+     * Folds a fresh measurement in, keeping the slowest one seen for this camera app.
+     *
+     * Cycle time swings with whether the camera cold-starts: the same Galaxy S20 measured 18s
+     * and then 9s minutes apart. Taking the newest would let one lucky run erase the knowledge
+     * that this phone can be slow, and the whole point of the figure is to warn before frames
+     * are lost. A different camera app carries nothing over - its timings are unrelated.
+     */
+    fun advanced(minIntervalSeconds: Int, camera: String, atMs: Long): CalibrationState {
+        val floor = if (appliesTo(camera)) {
+            maxOf(minIntervalSeconds, this.minIntervalSeconds)
+        } else {
+            minIntervalSeconds
+        }
+        return copy(
+            completed = true,
+            atMs = atMs,
+            minIntervalSeconds = floor,
+            cameraPackage = camera,
+        )
+    }
 }
 
 /**

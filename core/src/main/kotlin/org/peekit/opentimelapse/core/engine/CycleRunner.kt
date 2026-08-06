@@ -84,7 +84,9 @@ class CycleRunner(
                 var outcome = StepResult.fail("no unlock attempt was made")
                 for (attempt in 1..config.unlock.attempts.coerceAtLeast(1)) {
                     val swipe = actuator.swipeUnlock(config.unlock)
-                    waiter.sleep(delays.afterUnlockMs)
+                    // Polled, not slept: the keyguard clears when it clears, and spending the
+                    // whole settle every time is dead weight on every frame of the session.
+                    awaitKeyguardGone(delays.afterUnlockMs)
 
                     if (!actuator.isKeyguardShowing()) {
                         outcome = if (attempt == 1 && swipe.ok) {
@@ -239,6 +241,15 @@ class CycleRunner(
         return CycleOutcome(captured = true, paths = filed.paths)
     }
 
+    /** Waits up to [budgetMs] for the keyguard to go, returning as soon as it has. */
+    private suspend fun awaitKeyguardGone(budgetMs: Long) {
+        val deadline = clock.nowMs() + budgetMs
+        while (clock.nowMs() < deadline) {
+            waiter.sleep(minOf(KEYGUARD_POLL_MS, deadline - clock.nowMs()))
+            if (!actuator.isKeyguardShowing()) return
+        }
+    }
+
     private suspend fun runStep(step: CycleStep, block: suspend () -> StepResult): StepResult {
         events.emit(EngineEvent.StepStarted(clock.nowMs(), step))
         val result = block()
@@ -256,5 +267,6 @@ class CycleRunner(
     private companion object {
         /** Long enough for a cold camera to draw its controls, short enough to give up cheaply. */
         const val MAX_SHUTTER_WAIT_MS = 6_000L
+        const val KEYGUARD_POLL_MS = 100L
     }
 }

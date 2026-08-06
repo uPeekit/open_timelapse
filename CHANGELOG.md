@@ -2,11 +2,22 @@
 
 ## 0.5.1
 
-### Waiting for the camera instead of guessing at it
+### Waiting for things instead of guessing at them
 
 The cycle now waits for the shutter control to actually appear before pressing it, rather
 than sleeping a calibrated two seconds and hoping. A cold camera start that used to drop the
-frame now just takes a moment longer, and the blind settle afterwards is down to 800ms.
+frame now just takes a moment longer, and the blind settle afterwards is down to 800ms. The
+wait is capped at 6s, so a camera app that exposes no usable control at all falls back to
+coordinates quickly rather than paying a full timeout on every frame.
+
+The unlock polls the keyguard instead of sleeping a fixed settle after each swipe, so it
+proceeds the moment the lock screen clears, and it now retries four times rather than two — a
+swallowed swipe used to cost the frame. The one remaining timer is the wait between the screen
+reporting itself on and it actually accepting touches, which no API exposes.
+
+Stop lets a frame that is already being taken finish, instead of throwing away a shutter press
+that had already happened. Pressed between frames — where it usually is — it still stops at
+once.
 
 ### Timeouts no longer shrink
 

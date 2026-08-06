@@ -16,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.peekit.opentimelapse.MainActivity
 import org.peekit.opentimelapse.TimelapseApp
 import org.peekit.opentimelapse.accessibility.AccessibilityBridge
@@ -81,6 +82,16 @@ class TimelapseService : Service() {
     /** Calibration reuses the session's event sink, but must not describe itself as one. */
     @Volatile
     private var calibrating = false
+
+    /**
+     * True between a cycle's first step and the frame it produces.
+     *
+     * Stop reads it to decide whether there is anything worth waiting for: the engine spends
+     * most of a session idle between frames, where stopping is instant, and only a cycle
+     * already under way is worth letting finish.
+     */
+    @Volatile
+    private var cycleInFlight = false
 
     /** The snapshot the engine reads at the start of each cycle. */
     @Volatile
@@ -293,11 +304,13 @@ class TimelapseService : Service() {
                 tuned.copy(
                     delays = tuned.delays.copy(afterWakeMs = settleMs),
                     intervalSeconds = tuned.intervalSeconds.coerceAtLeast(minInterval),
-                    calibration = CalibrationState(
-                        completed = true,
-                        atMs = System.currentTimeMillis(),
+                    // Folded in rather than replaced: cycle time swings with whether the
+                    // camera cold-starts, and one lucky run must not erase how slow this
+                    // phone is known to get. See CalibrationState.advanced.
+                    calibration = stored.calibration.advanced(
                         minIntervalSeconds = minInterval,
-                        cameraPackage = stored.shutter.packageName,
+                        camera = stored.shutter.packageName,
+                        atMs = System.currentTimeMillis(),
                     ),
                 )
             }
@@ -476,13 +489,48 @@ class TimelapseService : Service() {
         return true
     }
 
+    /**
+     * Stops the session, letting a frame already in flight finish.
+     *
+     * Cancelling outright threw away whatever the cycle was doing - a shutter already pressed
+     * and a file already written were simply lost. So the engine is asked to stop and given a
+     * bounded window to reach the end of its cycle, which is also what produces the real
+     * summary. The window matters: the engine spends most of its life inside the wait between
+     * frames, where a graceful stop cannot land, so a hard cancel is still the fallback.
+     */
     private fun stop() {
+        val running = sessionJob?.takeIf { it.isActive }
+        if (running == null) {
+            stopSelfSafely()
+            return
+        }
+
         engine?.requestStop()
-        sessionJob?.cancel()
-        // Said explicitly, because cancelling means the engine never reaches its own summary:
-        // without this the result notification would repeat whatever was last said mid-run.
-        lastReport = "Stopped after $framesCaptured frame${if (framesCaptured == 1) "" else "s"}"
-        stopSelfSafely()
+
+        // Nothing in flight - the session is idle between frames, which is where Stop is
+        // pressed most of the time. Waiting there would only make Stop feel broken.
+        if (!cycleInFlight) {
+            running.cancel()
+            report("Stopped after $framesCaptured frame${if (framesCaptured == 1) "" else "s"}")
+            stopSelfSafely()
+            return
+        }
+
+        notificationStatus = "Finishing the current frame..."
+        notification.update(notificationStatus, framesCaptured)
+
+        scope.launch {
+            val endedOnItsOwn = withTimeoutOrNull(GRACEFUL_STOP_MS) { running.join() } != null
+            if (!endedOnItsOwn) {
+                running.cancel()
+                // The engine never reached its summary, so say something true instead of
+                // repeating whatever was last reported mid-run.
+                lastReport =
+                    "Stopped after $framesCaptured frame${if (framesCaptured == 1) "" else "s"}"
+                stopSelfSafely()
+            }
+            // Otherwise the session's own finally has already reported and stopped the service.
+        }
     }
 
     private fun report(text: String) {
@@ -591,6 +639,7 @@ class TimelapseService : Service() {
         app.log.emit(event)
         when (event) {
             is EngineEvent.FrameCaptured -> {
+                cycleInFlight = false
                 framesCaptured++
                 // Every calibration cycle shoots frame 1, so "frame ${index} captured" read
                 // as if nothing were progressing. Count the frames it still needs instead.
@@ -635,7 +684,12 @@ class TimelapseService : Service() {
                 }
             }
 
-            is EngineEvent.StepStarted -> notification.update("${event.step}...", framesCaptured)
+            is EngineEvent.StepStarted -> {
+                cycleInFlight = true
+                notification.update("${event.step}...", framesCaptured)
+            }
+
+            is EngineEvent.FrameFailed -> cycleInFlight = false
 
             else -> Unit
         }
@@ -695,6 +749,12 @@ class TimelapseService : Service() {
         /** The closing lock is asynchronous; this is how long its effect is waited for. */
         private const val LOCK_SETTLE_TIMEOUT_MS = 2_000L
         private const val LOCK_SETTLE_POLL_MS = 100L
+
+        /**
+         * How long Stop lets an in-flight frame finish before cancelling. Long enough for a
+         * slow capture to land, short enough that Stop still feels like stopping.
+         */
+        private const val GRACEFUL_STOP_MS = 20_000L
 
         fun send(context: Context, action: String) {
             val intent = Intent(context, TimelapseService::class.java).setAction(action)

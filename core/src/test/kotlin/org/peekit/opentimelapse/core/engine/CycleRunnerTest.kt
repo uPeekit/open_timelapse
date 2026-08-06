@@ -55,11 +55,30 @@ class CycleRunnerTest {
         )
         assertTrue(outcome.captured)
         assertContentEquals(listOf("/DCIM/OpenTimelapse/test/shot00000001.jpg"), outcome.paths)
-        // Every delay whose step ran, and nothing else: no afterShutter, since verification ran.
+        // Only the waits that were actually needed. The unlock no longer spends its whole
+        // settle - it polls and returns the moment the keyguard clears - so the cycle costs
+        // strictly less than the sum of its delays.
         val delays = config().delays
-        assertEquals(
-            delays.afterWakeMs + delays.afterUnlockMs + delays.afterCameraReadyMs,
-            time.now - startedAt,
+        assertTrue(
+            time.now - startedAt < delays.afterWakeMs + delays.afterUnlockMs + delays.afterCameraReadyMs,
+            "expected the polled unlock to finish early, took ${time.now - startedAt}ms",
+        )
+        assertTrue(time.now - startedAt >= delays.afterWakeMs + delays.afterCameraReadyMs)
+    }
+
+    @Test
+    fun `the unlock stops waiting the moment the keyguard clears`() = runTest {
+        actuator.screenOn = true
+        val startedAt = time.now
+
+        runner().run(config(), frameIndex = 1)
+
+        // A fixed settle spent afterUnlockMs whether it was needed or not; on a phone taking
+        // a frame every ten seconds that is dead time on every single one.
+        val spentUnlocking = time.now - startedAt - config().delays.afterCameraReadyMs
+        assertTrue(
+            spentUnlocking < config().delays.afterUnlockMs,
+            "polled unlock should beat the fixed settle, spent ${spentUnlocking}ms",
         )
     }
 
@@ -144,14 +163,30 @@ class CycleRunnerTest {
     }
 
     @Test
-    fun `unlock gives up once the configured attempts are exhausted`() = runTest {
-        actuator.unlocksOnAttempt = 5 // more than UnlockConfig.attempts
+    fun `unlock keeps trying past the old two attempts before giving up`() = runTest {
+        // A swallowed swipe is common enough that two tries was a frame-losing cap; the
+        // retries are cheap and verified, so the limit is now the configured one.
+        actuator.unlocksOnAttempt = 99 // never unlocks
 
         val outcome = runner().run(config(), frameIndex = 1)
 
         assertFalse(outcome.captured)
         assertEquals(CycleStep.UNLOCK, outcome.failedStep)
-        assertEquals(2, actuator.calls.count { it == "swipeUnlock" })
+        assertEquals(
+            config().unlock.attempts,
+            actuator.calls.count { it == "swipeUnlock" },
+        )
+        assertTrue(config().unlock.attempts >= 4, "two attempts was too few to be worth having")
+    }
+
+    @Test
+    fun `a swipe that lands on the fourth attempt still saves the frame`() = runTest {
+        actuator.unlocksOnAttempt = 4
+
+        val outcome = runner().run(config(), frameIndex = 1)
+
+        assertTrue(outcome.captured)
+        assertEquals(4, actuator.calls.count { it == "swipeUnlock" })
     }
 
     @Test

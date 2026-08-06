@@ -52,6 +52,55 @@ class TimelapseConfigTest {
     }
 
     @Test
+    fun `a lucky-fast recalibration cannot forget how slow this phone can be`() {
+        // Measured minutes apart on one Galaxy S20: 18s, then 9s, depending on whether the
+        // camera cold-started. The advisory floor must not be erased by the lucky run.
+        val known = CalibrationState(
+            completed = true,
+            minIntervalSeconds = 18,
+            cameraPackage = "com.sec.android.app.camera",
+        )
+
+        val advanced = known.advanced(
+            minIntervalSeconds = 9,
+            camera = "com.sec.android.app.camera",
+            atMs = 1_000,
+        )
+
+        assertEquals(18, advanced.minIntervalSeconds)
+    }
+
+    @Test
+    fun `a slower measurement is always adopted`() {
+        val known = CalibrationState(
+            completed = true,
+            minIntervalSeconds = 9,
+            cameraPackage = "com.sec.android.app.camera",
+        )
+
+        assertEquals(
+            20,
+            known.advanced(20, "com.sec.android.app.camera", atMs = 1_000).minIntervalSeconds,
+        )
+    }
+
+    @Test
+    fun `a different camera app starts the measurement over`() {
+        // Timings do not transfer between camera apps, so nothing should be carried across.
+        val known = CalibrationState(
+            completed = true,
+            minIntervalSeconds = 18,
+            cameraPackage = "com.sec.android.app.camera",
+        )
+
+        val moved = known.advanced(9, camera = "com.google.android.GoogleCamera", atMs = 1_000)
+
+        assertEquals(9, moved.minIntervalSeconds)
+        assertEquals("com.google.android.GoogleCamera", moved.cameraPackage)
+        assertTrue(moved.completed)
+    }
+
+    @Test
     fun `a zero interval cannot stall the engine`() {
         assertEquals(1_000L, TimelapseConfig(intervalSeconds = 0).intervalMs)
         assertEquals(30_000L, TimelapseConfig(intervalSeconds = 30).intervalMs)
