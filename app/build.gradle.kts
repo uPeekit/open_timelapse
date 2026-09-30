@@ -134,4 +134,12 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
+
+    // Pro is sold through Google Play only; the foss build carries no proprietary code.
+    "playImplementation"(libs.billing)
+    constraints {
+        // Billing drags in a Fragment library from 2019 through Play services, which breaks
+        // the activity-result API used for permission requests.
+        "playImplementation"("androidx.fragment:fragment:1.8.5")
+    }
 }

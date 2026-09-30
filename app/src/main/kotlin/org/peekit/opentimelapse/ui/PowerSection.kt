@@ -29,6 +29,7 @@ internal fun PowerSection(
     config: TimelapseConfig,
     onChange: ((TimelapseConfig) -> TimelapseConfig) -> Unit,
     onTest: (ChargingAction) -> Unit,
+    pro: ProGate,
 ) {
     val charging = config.charging
 
@@ -48,6 +49,16 @@ internal fun PowerSection(
         )
 
         HorizontalDivider()
+
+        if (!pro.unlocked) {
+            Text(pro.title("Control a smart plug"))
+            ProUpsell(
+                "Calls a URL when the battery gets low or full, so a shoot that runs for " +
+                    "days can charge itself without sitting at 100% the whole time.",
+                pro,
+            )
+            return@CollapsibleCard
+        }
 
         Row(
             Modifier.fillMaxWidth(),

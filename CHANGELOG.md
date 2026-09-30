@@ -12,6 +12,11 @@ button, the links to the repository, all-files access and `USE_EXACT_ALARM`. APK
 under `apk/foss/…` and are named `app-foss-…`. `docs/play-submission.md` has the checklist
 and the declaration texts for a Google Play release.
 
+The `play` build has a free tier and a one-time Pro purchase through Google Play Billing.
+Shooting and the default render are free; control over wi-fi, smart-plug charging, the
+custom render command and stopping at a set date and time are Pro. The `foss` build has
+everything unlocked and carries no billing code.
+
 Turning on the accessibility service now starts with an explanation of what it does and
 what it reads, which has to be agreed to before Settings opens.
 

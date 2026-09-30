@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 import kotlinx.coroutines.delay
+import org.peekit.opentimelapse.BuildConfig
 import org.peekit.opentimelapse.core.model.CycleMode
 import org.peekit.opentimelapse.core.model.EndMode
 import org.peekit.opentimelapse.core.model.StartTrigger
@@ -47,6 +48,7 @@ internal fun ShootSection(
     runState: RunState,
     canStart: Boolean,
     actions: MainActions,
+    pro: ProGate,
 ) {
     val running = runState.serverState == ServerState.RUNNING
 
@@ -101,7 +103,7 @@ internal fun ShootSection(
             }
 
             IntervalField(config, actions.onConfigChange)
-            StopConditionSettings(config, actions.onConfigChange)
+            StopConditionSettings(config, actions.onConfigChange, pro)
 
             MoreOptions(config, actions.onConfigChange)
         }
@@ -250,6 +252,9 @@ private fun MoreOptions(
         )
     }
 
+    // Renaming needs all-files access, which the play flavor cannot have.
+    if (!BuildConfig.ALL_FILES_ACCESS) return
+
     HorizontalDivider()
 
     Row(
@@ -297,7 +302,12 @@ private fun MoreOptions(
 private fun StopConditionSettings(
     config: TimelapseConfig,
     onChange: ((TimelapseConfig) -> TimelapseConfig) -> Unit,
+    pro: ProGate,
 ) {
+    // Stopping at a set time is a Pro feature; tapping it while locked explains that here
+    // rather than silently doing nothing.
+    var upsell by rememberSaveable { mutableStateOf(false) }
+
     Text(
         "Stop",
         style = MaterialTheme.typography.titleSmall,
@@ -316,11 +326,26 @@ private fun StopConditionSettings(
                 Button(onClick = {}, modifier = Modifier.weight(1f)) { Text(label, maxLines = 2) }
             } else {
                 OutlinedButton(
-                    onClick = { onChange { it.copy(session = it.session.copy(endMode = mode)) } },
+                    onClick = {
+                        if (mode == EndMode.AT_TIME && !pro.unlocked) {
+                            upsell = true
+                        } else {
+                            upsell = false
+                            onChange { it.copy(session = it.session.copy(endMode = mode)) }
+                        }
+                    },
                     modifier = Modifier.weight(1f),
                 ) { Text(label, maxLines = 2) }
             }
         }
+    }
+
+    if (upsell && !pro.unlocked) {
+        ProUpsell(
+            "Stop at a set date and time - sunrise tomorrow, or Friday evening - " +
+                "however long that is from now.",
+            pro,
+        )
     }
 
     when (config.session.endMode) {

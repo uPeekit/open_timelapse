@@ -64,6 +64,7 @@ class MainActivity : ComponentActivity() {
                 val log by app.log.log.collectAsStateWithLifecycle()
                 val render by app.renderState.state.collectAsStateWithLifecycle()
                 val runState by app.runState.state.collectAsStateWithLifecycle()
+                val pro by app.pro.state.collectAsStateWithLifecycle()
 
                 // Open the finished video once per completion, when asked. rememberSaveable
                 // survives a rotation so it does not reopen; a completionId only advances on a
@@ -89,6 +90,7 @@ class MainActivity : ComponentActivity() {
                         sessions = sessions,
                         render = render,
                         runState = runState,
+                        pro = pro,
                         actions = MainActions(
                             onStart = { TimelapseService.send(this, TimelapseService.ACTION_START) },
                             onStop = { TimelapseService.send(this, TimelapseService.ACTION_STOP) },
@@ -120,6 +122,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onShareLog = ::shareLog,
+                            onUnlockPro = { app.pro.purchase(this) },
                         ),
                         version = versionLabel(),
                         modifier = Modifier.padding(padding),
@@ -142,6 +145,8 @@ class MainActivity : ComponentActivity() {
         // Re-read on every return: the user may have just changed something in Settings,
         // and several of these cannot be observed any other way.
         refreshChecks()
+        // Also picks up a purchase or a refund made while the app was in the background.
+        app.pro.refresh()
 
         // Asked for here rather than in onCreate: the platform only honours it for an
         // activity that is actually visible.

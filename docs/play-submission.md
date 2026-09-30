@@ -67,10 +67,34 @@ core function breaks without it; if review objects, the justification is that a 
 frozen by doze drops frames, and the fallback is to open the battery settings list instead
 of the direct dialog.
 
+## Free and Pro
+
+The play build is free to install, with one one-time purchase that unlocks Pro. Shooting,
+calibration, the default render and the session list are always free. Pro is:
+
+- Control over wi-fi
+- Smart-plug charging (the battery floor in the same card stays free)
+- The custom render command
+- Stopping at a set date and time
+
+Set-up in Play Console, before the first upload that should sell anything:
+
+- [ ] Create a one-time product with the id `pro_unlock` (non-consumable) and set its price.
+      The id is fixed in `src/play/.../pro/ProAccessFactory.kt`; never change it once on sale.
+- [ ] Add licence testers, so the purchase can be tried without paying.
+- [ ] Test on a build installed from a Play test track: buy, restart, and refund. Until the
+      product exists the button only writes "Pro cannot be bought right now" to the log.
+
+The gate is in the UI only: it decides which settings can be reached, never what a running
+session does. Ownership is cached on the phone, so Pro keeps working offline; only a
+successful check that finds no purchase (a refund) locks it again.
+
 ## Things that differ from the foss build
 
 | | foss | play |
 |---|---|---|
+| Pro features | all unlocked | one-time purchase |
+| Rename frames | optional | hidden - it needs all-files access |
 | Donation button | yes | no - Play Billing rules |
 | Source and issue links | yes | no - closed source |
 | All-files access | optional | not declared - frames keep the camera's names |

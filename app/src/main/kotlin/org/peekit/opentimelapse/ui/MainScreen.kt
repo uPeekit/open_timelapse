@@ -29,6 +29,7 @@ import org.peekit.opentimelapse.core.model.TimelapseConfig
 import org.peekit.opentimelapse.data.LogEntry
 import org.peekit.opentimelapse.data.RenderState
 import org.peekit.opentimelapse.data.RunState
+import org.peekit.opentimelapse.pro.ProState
 
 data class MainActions(
     val onStart: () -> Unit,
@@ -43,6 +44,7 @@ data class MainActions(
     val onDeclineCalibration: () -> Unit,
     val onTestWebhook: (ChargingAction) -> Unit,
     val onShareLog: () -> Unit,
+    val onUnlockPro: () -> Unit,
 )
 
 /**
@@ -57,11 +59,13 @@ fun MainScreen(
     sessions: List<SessionManifest>,
     render: RenderState,
     runState: RunState,
+    pro: ProState,
     actions: MainActions,
     version: String,
     modifier: Modifier = Modifier,
 ) {
     val blocking = SetupChecks.blocking(checks)
+    val proGate = ProGate(pro, actions.onUnlockPro)
 
     Column(
         modifier = modifier
@@ -76,7 +80,7 @@ fun MainScreen(
         )
 
         SetupSection(checks, config, actions)
-        ShootSection(config, runState, blocking.isEmpty(), actions)
+        ShootSection(config, runState, blocking.isEmpty(), actions, proGate)
 
         SessionsSection(
             sessions = sessions,
@@ -88,9 +92,9 @@ fun MainScreen(
             actions = actions.sessionActions,
         )
 
-        PowerSection(config, actions.onConfigChange, actions.onTestWebhook)
-        NetworkSection(config, actions.onConfigChange)
-        RenderCommandSection(config, actions.onConfigChange)
+        PowerSection(config, actions.onConfigChange, actions.onTestWebhook, proGate)
+        NetworkSection(config, actions.onConfigChange, proGate)
+        RenderCommandSection(config, actions.onConfigChange, proGate)
         LogSection(log, actions.onShareLog)
         AboutSection(version, actions.onOpenUrl, actions.onOpenLicenses)
     }

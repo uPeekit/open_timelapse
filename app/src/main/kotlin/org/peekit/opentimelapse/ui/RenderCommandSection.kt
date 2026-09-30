@@ -26,6 +26,7 @@ import org.peekit.opentimelapse.core.render.RenderSpec
 internal fun RenderCommandSection(
     config: TimelapseConfig,
     onChange: ((TimelapseConfig) -> TimelapseConfig) -> Unit,
+    pro: ProGate,
 ) {
     val generated = remember {
         FfmpegCommandBuilder.asShellCommand(
@@ -35,7 +36,16 @@ internal fun RenderCommandSection(
     val custom = config.customRenderCommand
     val editing = custom.isNotBlank()
 
-    CollapsibleCard(title = "Render command") {
+    CollapsibleCard(title = pro.title("Render command")) {
+        if (!pro.unlocked) {
+            ProUpsell(
+                "Edit the ffmpeg command behind the render: deflicker, a different " +
+                    "quality, a crop. Without it, videos render with the standard settings.",
+                pro,
+            )
+            return@CollapsibleCard
+        }
+
         Text(
             if (editing) {
                 "Using your command. The output path is still filled in by the app."

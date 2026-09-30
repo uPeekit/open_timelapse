@@ -33,10 +33,20 @@ import org.peekit.opentimelapse.net.QrBitmap
 internal fun NetworkSection(
     config: TimelapseConfig,
     onChange: ((TimelapseConfig) -> TimelapseConfig) -> Unit,
+    pro: ProGate,
 ) {
     val net = config.network
 
-    CollapsibleCard(title = "Control over wi-fi") {
+    CollapsibleCard(title = pro.title("Control over wi-fi")) {
+        if (!pro.unlocked) {
+            ProUpsell(
+                "Check on a running shoot from a laptop on your wi-fi: status, a live " +
+                    "preview and a Stop button, for one phone or several.",
+                pro,
+            )
+            return@CollapsibleCard
+        }
+
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,

@@ -13,6 +13,7 @@ import org.peekit.opentimelapse.data.LogFile
 import org.peekit.opentimelapse.data.LogRepository
 import org.peekit.opentimelapse.data.RenderStateRepository
 import org.peekit.opentimelapse.data.RunStateRepository
+import org.peekit.opentimelapse.pro.createProAccess
 import org.peekit.opentimelapse.render.FfmpegRunner
 import org.peekit.opentimelapse.service.ChargingWebhooks
 import org.peekit.opentimelapse.storage.SessionExporter
@@ -48,6 +49,9 @@ class TimelapseApp : Application() {
     }
 
     val configRepository by lazy { ConfigRepository(this) }
+
+    /** Which paid features the UI may offer; always everything in the foss build. */
+    val pro by lazy { createProAccess(this, log) }
 
     /** The live session, published for the control server (and later the UI). */
     val runState by lazy { RunStateRepository() }
