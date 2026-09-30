@@ -17,12 +17,13 @@ plugins {
 
 android {
     namespace = "org.peekit.opentimelapse"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "org.peekit.opentimelapse"
         minSdk = 28
-        targetSdk = 35
+        // Google Play refuses new apps that target anything older.
+        targetSdk = 36
         // Bump versionCode for every build you install over an older one; Android refuses
         // a downgrade. versionName is what humans read.
         versionCode = 22
@@ -45,6 +46,32 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    // Same app, two shop windows. foss (free and open source software) is the build that is
+    // sideloaded or published from the public repository. play is the Google Play build:
+    // Play forbids a donation link that bypasses its billing and will not grant all-files
+    // access or USE_EXACT_ALARM to an app like this one (see src/play/AndroidManifest.xml),
+    // and it is sold closed-source, so it links to no repository either. A blank URL hides
+    // its row in the About card.
+    flavorDimensions += "store"
+    productFlavors {
+        create("foss") {
+            dimension = "store"
+            isDefault = true
+            buildConfigField("String", "SOURCE_URL", "\"https://github.com/uPeekit/open_timelapse\"")
+            buildConfigField("String", "ISSUES_URL", "\"https://github.com/uPeekit/open_timelapse/issues\"")
+            buildConfigField("String", "DONATE_URL", "\"https://github.com/sponsors/uPeekit\"")
+            buildConfigField("boolean", "ALL_FILES_ACCESS", "true")
+        }
+        create("play") {
+            dimension = "store"
+            buildConfigField("String", "SOURCE_URL", "\"\"")
+            buildConfigField("String", "ISSUES_URL", "\"\"")
+            buildConfigField("String", "DONATE_URL", "\"\"")
+            buildConfigField("boolean", "ALL_FILES_ACCESS", "false")
+        }
     }
 
     // Per-ABI APKs so neither ships a 4MB ffmpeg binary it cannot run. A universal APK is

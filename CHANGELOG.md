@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+An About card at the bottom of the main screen: version and build number, licence summary,
+links to the source and the issue tracker, the open-source notice, and a "Buy me a coffee"
+button. The licences link moved in from the loose button below the log. All outbound links
+live in one place (`AboutLinks`), so changing the donation page is a one-line edit.
+
+Two store flavors. `foss` is the app as before. `play` is the same code without the donation
+button, the links to the repository, all-files access and `USE_EXACT_ALARM`. APKs now land
+under `apk/foss/…` and are named `app-foss-…`. `docs/play-submission.md` has the checklist
+and the declaration texts for a Google Play release.
+
+Turning on the accessibility service now starts with an explanation of what it does and
+what it reads, which has to be agreed to before Settings opens.
+
+Targets Android 16 (API 36). The bundled ffmpeg is linked for 16 KB pages, so it runs on
+devices that use them; rebuild it with `tools/build-ffmpeg.sh` before the next release.
+
 ## 0.5.2
 
 The camera-launch timeout gets the same repair 0.5.1 gave the capture window. Found in a real

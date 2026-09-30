@@ -26,7 +26,7 @@ object ControlPage {
   input { flex: 1; min-width: 12rem; padding: .55rem; font-size: 1rem; box-sizing: border-box;
           border-radius: 8px; border: 1px solid rgba(128,128,128,.5); background: transparent; color: inherit; }
   button { padding: .55rem 1rem; font-size: 1rem; border-radius: 8px; border: none; cursor: pointer; }
-  .primary { background: #5b4bd6; color: #fff; }
+  .primary { background: #c2185b; color: #fff; }
   .ghost { background: transparent; border: 1px solid rgba(128,128,128,.5); color: inherit; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
   .card { border: 1px solid rgba(128,128,128,.35); border-radius: 12px; padding: .8rem; }
@@ -37,7 +37,7 @@ object ControlPage {
   .card img { max-width: 70%; border-radius: 8px; margin-top: .5rem; display: none; }
   .muted { opacity: .6; font-size: .8rem; }
   .x { background: transparent; border: none; color: inherit; opacity: .6; cursor: pointer; font-size: 1.2rem; }
-  .stop { background: #5b4bd6; color: #fff; margin-top: .5rem; }
+  .stop { background: #c2185b; color: #fff; margin-top: .5rem; }
 </style>
 </head>
 <body>

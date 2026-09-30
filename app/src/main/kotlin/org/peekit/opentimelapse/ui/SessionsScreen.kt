@@ -5,9 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -45,25 +43,24 @@ fun SessionsSection(
     onOpenAfterRenderChange: (Boolean) -> Unit,
     actions: SessionActions,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Sessions", style = MaterialTheme.typography.titleMedium)
+    // The count in the title keeps the collapsed line informative on its own.
+    val title = if (sessions.isEmpty()) "Sessions" else "Sessions (${sessions.size})"
 
-            if (sessions.isEmpty()) {
-                Text("No sessions yet. Shoot one and it appears here.", style = MaterialTheme.typography.bodySmall)
-                return@Column
-            }
+    CollapsibleCard(title = title) {
+        if (sessions.isEmpty()) {
+            Text("No sessions yet. Shoot one and it appears here.", style = MaterialTheme.typography.bodySmall)
+            return@CollapsibleCard
+        }
 
-            // One switch for all renders: check the result at a glance without hunting for
-            // the file.
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = openAfterRender, onCheckedChange = onOpenAfterRenderChange)
-                Text("Open the video when a render finishes", style = MaterialTheme.typography.bodyMedium)
-            }
+        // One switch for all renders: check the result at a glance without hunting for
+        // the file.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = openAfterRender, onCheckedChange = onOpenAfterRenderChange)
+            Text("Open the video when a render finishes", style = MaterialTheme.typography.bodyMedium)
+        }
 
-            sessions.forEach { session ->
-                SessionRow(session, render, actions)
-            }
+        sessions.forEach { session ->
+            SessionRow(session, render, actions)
         }
     }
 }

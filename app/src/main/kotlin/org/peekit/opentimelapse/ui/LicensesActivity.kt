@@ -24,7 +24,7 @@ class LicensesActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            AppTheme {
                 Scaffold { padding ->
                     Column(
                         Modifier
@@ -42,18 +42,36 @@ class LicensesActivity : ComponentActivity() {
     }
 
     private companion object {
-        val NOTICE = """
-            OpenTimelapse is licensed under Apache-2.0.
-
+        val FFMPEG = """
             This build bundles an ffmpeg executable to render timelapses on the device.
             It is built with libx264, which makes that binary GPL-2.0-or-later.
 
             ffmpeg - https://ffmpeg.org - GPL-2.0-or-later (as built)
             x264   - https://www.videolan.org/developers/x264.html - GPL-2.0-or-later
+        """.trimIndent()
+
+        // The play flavor has no public repository to point at, so the GPL's source
+        // obligation for the ffmpeg binary is met by a written offer instead.
+        val NOTICE = if (AboutLinks.SOURCE.isNotBlank()) {
+            """
+            OpenTimelapse is licensed under Apache-2.0.
+
+            $FFMPEG
 
             The exact upstream versions and the script that reproduces the binary are in the
             project's tools/build-ffmpeg.sh, and the full licence texts are in its LICENSES
             directory. Contact the distributor of this build for the corresponding source.
-        """.trimIndent()
+            """.trimIndent()
+        } else {
+            """
+            $FFMPEG
+
+            The ffmpeg executable is a separate program that OpenTimelapse runs; the app
+            itself is not covered by the GPL. The complete corresponding source for that
+            executable - the exact upstream versions and the script that reproduces it - is
+            available at no charge, for at least three years from the day you received this
+            build, on request to the developer contact shown on the app's store page.
+            """.trimIndent()
+        }
     }
 }

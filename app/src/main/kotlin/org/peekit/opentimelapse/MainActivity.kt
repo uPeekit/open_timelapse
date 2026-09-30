@@ -13,7 +13,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -31,6 +30,7 @@ import org.peekit.opentimelapse.core.render.RenderSpec
 import org.peekit.opentimelapse.data.RenderPhase
 import org.peekit.opentimelapse.render.RenderService
 import org.peekit.opentimelapse.service.TimelapseService
+import org.peekit.opentimelapse.ui.AppTheme
 import org.peekit.opentimelapse.ui.LicensesActivity
 import org.peekit.opentimelapse.ui.MainActions
 import org.peekit.opentimelapse.ui.MainScreen
@@ -58,11 +58,12 @@ class MainActivity : ComponentActivity() {
         readReturnRequest(intent)
 
         setContent {
-            MaterialTheme {
+            AppTheme {
                 val config by app.configRepository.config
                     .collectAsStateWithLifecycle(initialValue = TimelapseConfig())
                 val log by app.log.log.collectAsStateWithLifecycle()
                 val render by app.renderState.state.collectAsStateWithLifecycle()
+                val runState by app.runState.state.collectAsStateWithLifecycle()
 
                 // Open the finished video once per completion, when asked. rememberSaveable
                 // survives a rotation so it does not reopen; a completionId only advances on a
@@ -87,6 +88,7 @@ class MainActivity : ComponentActivity() {
                         log = log,
                         sessions = sessions,
                         render = render,
+                        runState = runState,
                         actions = MainActions(
                             onStart = { TimelapseService.send(this, TimelapseService.ACTION_START) },
                             onStop = { TimelapseService.send(this, TimelapseService.ACTION_STOP) },
@@ -111,6 +113,7 @@ class MainActivity : ComponentActivity() {
                             onOpenLicenses = {
                                 startActivity(Intent(this@MainActivity, LicensesActivity::class.java))
                             },
+                            onOpenUrl = ::openUrl,
                             onTestWebhook = { action ->
                                 lifecycleScope.launch {
                                     app.charging.test(app.configRepository.current().charging, action)
@@ -118,6 +121,7 @@ class MainActivity : ComponentActivity() {
                             },
                             onShareLog = ::shareLog,
                         ),
+                        version = versionLabel(),
                         modifier = Modifier.padding(padding),
                     )
                 }
@@ -204,6 +208,21 @@ class MainActivity : ComponentActivity() {
         }
         runCatching { startActivity(intent) }
             .onFailure { app.log.message("No app available to open the video") }
+    }
+
+    private fun versionLabel(): String {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.longVersionCode
+        } else {
+            @Suppress("DEPRECATION") info.versionCode.toLong()
+        }
+        return "${info.versionName ?: "?"} (build $code)"
+    }
+
+    /** A phone with no browser at all is rare but real; failing quietly beats crashing. */
+    private fun openUrl(url: String) {
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
     }
 
     private fun shareLog() {

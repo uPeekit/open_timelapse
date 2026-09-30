@@ -41,6 +41,7 @@ class TimelapseNotification(private val context: Context) {
         return Notification.Builder(context, CHANNEL_ID)
             .setContentTitle(if (frames > 0) "Timelapse - $frames frames" else "Timelapse")
             .setContentText(status)
+            .setColor(BRAND_PINK)
             .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -75,6 +76,7 @@ class TimelapseNotification(private val context: Context) {
                 .setContentText(text)
                 // The calibration result is a sentence, not a word; let it wrap when expanded.
                 .setStyle(Notification.BigTextStyle().bigText(text))
+                .setColor(BRAND_PINK)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setAutoCancel(true)
                 .setContentIntent(open)
@@ -84,6 +86,9 @@ class TimelapseNotification(private val context: Context) {
 
     companion object {
         const val ID = 1
+
+        /** Matches the app theme's pink primary (Theme.kt). */
+        private val BRAND_PINK = 0xFFC2185B.toInt()
 
         /** Separate from [ID], which is being removed at the moment the result is posted. */
         private const val RESULT_ID = 3

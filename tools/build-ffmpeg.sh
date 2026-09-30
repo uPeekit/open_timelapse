@@ -88,6 +88,9 @@ build_ffmpeg() {
 
   # --disable-everything, then re-enable exactly what a timelapse render needs. Keeps the
   # binary small enough to ship in an APK: image sequences in, H.264/HEVC in an mp4 out.
+  #
+  # max-page-size=16384: NDK r27 still links for 4 KB pages by default. A binary aligned
+  # that way cannot be loaded on a 16 KB-page device, and Google Play rejects it outright.
   "$SRC/ffmpeg/configure" \
     --prefix="$PREFIX" \
     --target-os=android \
@@ -98,7 +101,7 @@ build_ffmpeg() {
     --cc="$CC" --cxx="$CXX" --ar="$AR" --nm="$NM" --ranlib="$RANLIB" --strip="$STRIP" \
     --sysroot="$TOOLCHAIN/sysroot" \
     --extra-cflags="-Os -fPIC -I$PREFIX/include" \
-    --extra-ldflags="-L$PREFIX/lib" \
+    --extra-ldflags="-L$PREFIX/lib -Wl,-z,max-page-size=16384" \
     --pkg-config=pkg-config \
     --pkg-config-flags="--static" \
     --disable-everything \

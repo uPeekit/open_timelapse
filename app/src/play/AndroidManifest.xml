@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+        Play reserves USE_EXACT_ALARM for alarm, timer and calendar apps. SCHEDULE_EXACT_ALARM
+        stays, so the Setup checklist's "Exact alarms" item sends the user to grant it by hand.
+    -->
+    <uses-permission
+        android:name="android.permission.USE_EXACT_ALARM"
+        tools:node="remove" />
+
+    <!--
+        Play grants all-files access to file managers, backup tools and the like - not to a
+        camera automation. Frames keep the camera's own names and sessions render from a
+        file list, which is the path the app already takes when the permission is refused.
+    -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage"
+        tools:node="remove" />
+
+</manifest>

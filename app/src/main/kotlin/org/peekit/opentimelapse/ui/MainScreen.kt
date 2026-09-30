@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -21,12 +21,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import org.peekit.opentimelapse.core.engine.ChargingAction
 import org.peekit.opentimelapse.core.model.SessionManifest
 import org.peekit.opentimelapse.core.model.TimelapseConfig
 import org.peekit.opentimelapse.data.LogEntry
 import org.peekit.opentimelapse.data.RenderState
+import org.peekit.opentimelapse.data.RunState
 
 data class MainActions(
     val onStart: () -> Unit,
@@ -36,12 +38,17 @@ data class MainActions(
     val onConfigChange: ((TimelapseConfig) -> TimelapseConfig) -> Unit,
     val sessionActions: SessionActions,
     val onOpenLicenses: () -> Unit,
+    val onOpenUrl: (String) -> Unit,
     val onCalibrate: () -> Unit,
     val onDeclineCalibration: () -> Unit,
     val onTestWebhook: (ChargingAction) -> Unit,
     val onShareLog: () -> Unit,
 )
 
+/**
+ * Ordered by how often each part is touched: setup (until green) and the Shoot card on
+ * top, results next, and the set-once extras folded away below.
+ */
 @Composable
 fun MainScreen(
     config: TimelapseConfig,
@@ -49,7 +56,9 @@ fun MainScreen(
     log: List<LogEntry>,
     sessions: List<SessionManifest>,
     render: RenderState,
+    runState: RunState,
     actions: MainActions,
+    version: String,
     modifier: Modifier = Modifier,
 ) {
     val blocking = SetupChecks.blocking(checks)
@@ -60,13 +69,15 @@ fun MainScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("OpenTimelapse", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            "OpenTimelapse",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
 
         SetupSection(checks, config, actions)
-        ControlsSection(blocking.isEmpty(), actions)
-        SettingsSection(config, actions.onConfigChange)
-        PowerSection(config, actions.onConfigChange, actions.onTestWebhook)
-        NetworkSection(config, actions.onConfigChange)
+        ShootSection(config, runState, blocking.isEmpty(), actions)
+
         SessionsSection(
             sessions = sessions,
             render = render,
@@ -76,12 +87,12 @@ fun MainScreen(
             },
             actions = actions.sessionActions,
         )
+
+        PowerSection(config, actions.onConfigChange, actions.onTestWebhook)
+        NetworkSection(config, actions.onConfigChange)
         RenderCommandSection(config, actions.onConfigChange)
         LogSection(log, actions.onShareLog)
-
-        TextButton(onClick = actions.onOpenLicenses) {
-            Text("Open source licences")
-        }
+        AboutSection(version, actions.onOpenUrl, actions.onOpenLicenses)
     }
 }
 
@@ -103,6 +114,33 @@ private fun SetupSection(checks: List<SetupCheck>, config: TimelapseConfig, acti
     // Follows the state: collapses when everything is green, re-opens if something regresses -
     // while still letting the user tap to peek either way.
     var expanded by remember(allOk) { mutableStateOf(!allOk) }
+    // Asked every time rather than remembered: consent that outlives the service being
+    // switched off again would send the user to Settings without the explanation.
+    var disclosing by remember { mutableStateOf<SetupCheck?>(null) }
+
+    disclosing?.let { check ->
+        AlertDialog(
+            onDismissRequest = { disclosing = null },
+            title = { Text(check.title) },
+            text = {
+                Text(
+                    check.disclosure.orEmpty(),
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        disclosing = null
+                        actions.onFix(check)
+                    },
+                ) { Text("Agree and continue") }
+            },
+            dismissButton = {
+                TextButton(onClick = { disclosing = null }) { Text("No thanks") }
+            },
+        )
+    }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -114,6 +152,7 @@ private fun SetupSection(checks: List<SetupCheck>, config: TimelapseConfig, acti
                 Text(
                     if (allOk) "Setup - OK" else "Setup",
                     style = MaterialTheme.typography.titleMedium,
+                    color = if (allOk) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
                 )
                 Text(if (expanded) "▲" else "▼", style = MaterialTheme.typography.titleMedium)
             }
@@ -122,10 +161,17 @@ private fun SetupSection(checks: List<SetupCheck>, config: TimelapseConfig, acti
                 checks.forEach { check ->
                     SetupItem(
                         mark = if (check.satisfied) "OK  " else if (check.required) "!!  " else "--  ",
+                        markColor = markColor(satisfied = check.satisfied, required = check.required),
                         title = check.title,
                         detail = check.detail,
                         action = if (!check.satisfied && check.fix != null) {
-                            { OutlinedButton(onClick = { actions.onFix(check) }) { Text("Fix") } }
+                            {
+                                OutlinedButton(
+                                    onClick = {
+                                        if (check.disclosure != null) disclosing = check else actions.onFix(check)
+                                    },
+                                ) { Text("Fix") }
+                            }
                         } else {
                             null
                         },
@@ -134,6 +180,7 @@ private fun SetupSection(checks: List<SetupCheck>, config: TimelapseConfig, acti
 
                 SetupItem(
                     mark = if (calibrated) "OK  " else if (cal.declined) "--  " else "!!  ",
+                    markColor = markColor(satisfied = calibrated, required = !cal.declined),
                     title = "Calibration",
                     detail = when {
                         stale -> "Calibrated for another camera - recalibrate for ${config.shutter.packageName}."
@@ -162,44 +209,32 @@ private fun SetupSection(checks: List<SetupCheck>, config: TimelapseConfig, acti
 }
 
 @Composable
-private fun SetupItem(mark: String, title: String, detail: String, action: (@Composable () -> Unit)?) {
+private fun markColor(satisfied: Boolean, required: Boolean): Color = when {
+    satisfied -> MaterialTheme.colorScheme.secondary
+    required -> MaterialTheme.colorScheme.primary
+    else -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+@Composable
+private fun SetupItem(
+    mark: String,
+    markColor: Color,
+    title: String,
+    detail: String,
+    action: (@Composable () -> Unit)?,
+) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(mark + title, style = MaterialTheme.typography.bodyLarge)
+            Row {
+                Text(mark, style = MaterialTheme.typography.bodyLarge, color = markColor)
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+            }
             Text(detail, style = MaterialTheme.typography.bodySmall)
         }
         action?.invoke()
-    }
-}
-
-@Composable
-private fun ControlsSection(canStart: Boolean, actions: MainActions) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Controls", style = MaterialTheme.typography.titleMedium)
-
-            if (!canStart) {
-                Text(
-                    "Finish the required setup items above before starting.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Text(
-                "Start opens your camera and waits, so you can pick the mode - Pro, RAW, " +
-                    "Night, whatever. The app never changes it; it just presses the shutter.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = actions.onStart, enabled = canStart) { Text("Start") }
-                OutlinedButton(onClick = actions.onStop) { Text("Stop") }
-                OutlinedButton(onClick = actions.onSingleCycle, enabled = canStart) {
-                    Text("Test shot")
-                }
-            }
-        }
     }
 }

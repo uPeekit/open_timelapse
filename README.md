@@ -76,11 +76,15 @@ No location, contacts, microphone, or account permissions are requested.
 
 ```sh
 ./gradlew :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+adb install -r app/build/outputs/apk/foss/debug/app-foss-arm64-v8a-debug.apk
 ```
 
-Three APKs are produced — `arm64-v8a`, `armeabi-v7a`, and a `universal` containing both.
-Any phone from the last several years wants **arm64-v8a**.
+Three APKs are produced per flavor — `arm64-v8a`, `armeabi-v7a`, and a `universal`
+containing both. Any phone from the last several years wants **arm64-v8a**.
+
+There are two store flavors. **foss** is the full app and the one to sideload. **play** is
+the same code minus what Google Play does not allow here: the donation button, all-files
+access (so frames keep the camera's names) and `USE_EXACT_ALARM`.
 
 ### The accessibility service
 
@@ -133,20 +137,27 @@ installed.
 
    ```sh
    ./gradlew :core:test          # the engine's behaviour lives here
-   ./gradlew :app:assembleRelease
+   ./gradlew :app:assembleFossRelease
    ```
 
 3. **Check it is really signed:**
 
    ```sh
-   apksigner verify --print-certs app/build/outputs/apk/release/app-arm64-v8a-release.apk
+   apksigner verify --print-certs app/build/outputs/apk/foss/release/app-foss-arm64-v8a-release.apk
    ```
 
-4. **Ship** `app/build/outputs/apk/release/`:
-   - `app-arm64-v8a-release.apk` — for essentially every modern phone
-   - `app-armeabi-v7a-release.apk` — older 32-bit devices
-   - `app-universal-release.apk` — both, ~2 MB larger; use it if you would rather not
+4. **Ship** `app/build/outputs/apk/foss/release/`:
+   - `app-foss-arm64-v8a-release.apk` — for essentially every modern phone
+   - `app-foss-armeabi-v7a-release.apk` — older 32-bit devices
+   - `app-foss-universal-release.apk` — both, ~2 MB larger; use it if you would rather not
      explain ABIs to anyone
+
+   For Google Play, build the bundle instead and upload
+   `app/build/outputs/bundle/playRelease/app-play-release.aab`:
+
+   ```sh
+   ./gradlew :app:bundlePlayRelease
+   ```
 
 **Samsung needs a second battery setting.** The checklist's exemption is necessary but not
 sufficient on One UI: also set Battery → **Unrestricted** in the app's own system settings,
